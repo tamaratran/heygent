@@ -644,6 +644,34 @@ class Conductor:
         self._emit("task.resumed", "task", task_id=task_id,
                    provider_session_id=task.provider_session_id)
         await self._subscribe(self.store.get(task_id))
+        await self.continue_if_idle(task)
+
+    CONTINUE = "Please continue with the task."
+
+    async def continue_if_idle(self, task: Task) -> bool:
+        """Tell a resumed worker to go on, when it is sitting at its prompt.
+
+        Resuming a process is not resuming the work. `claude --resume`
+        comes back at its prompt and stays there, and a live pane that
+        was interrupted is no different, so resume_task said "ok" over an
+        idle worker - twice on 2026-09-11 (task_3ef16ed0), and each time
+        the Boss had to notice and send a follow-up itself. A worker mid-
+        turn, or on a dialog, is left alone; a runtime that cannot tell
+        (no at_prompt) is left as it was. True when the nudge was sent."""
+        probe = getattr(self.runtime, "at_prompt", None)
+        if probe is None or not task.provider_session_id:
+            return False
+        idle = probe(task.provider_session_id)
+        if inspect.isawaitable(idle):
+            idle = await idle
+        if idle is not True:
+            return False
+        await self.runtime.send(task.provider_session_id, self.CONTINUE)
+        task_events.append(self.store, task.id, "user_instruction",
+                           text=self.CONTINUE)
+        self._emit("task.continued", "task", task_id=task.id,
+                   provider_session_id=task.provider_session_id)
+        return True
 
     async def complete_task(self, task_id: str) -> None:
         """The task is done - because the user, through the Manager, says so.

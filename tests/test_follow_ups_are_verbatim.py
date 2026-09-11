@@ -1,21 +1,26 @@
-"""A follow-up reaches the worker in the user's words, not the manager's.
+"""A follow-up reaches the worker as the manager wrote it.
 
-What workers actually received at 23:59 tonight, after the manager prompt
-had been tightened to "you are a switchboard here, not an author":
+It did not. From 2026-08-31 send_to_task SENT the user's utterance in
+place of any follow-up that was not the user's own words
+(hold_to_users_words), because the manager had been seen wrapping
+instructions in framing the user never said. On 2026-09-10 that rule fired
+twelve times, and every time it cost the worker the instruction - the
+Boss by then quoted the user and added only what the worker needed:
 
-    task_16f95123  'Did we fix the area where it said "remote control..."'
-                                                            <- verbatim
-    task_20cb6ebd  'Additional read-only question from the user: did we
-                    ever fix...'                            <- wrapped
-    task_7fbead35  "Here's the actual instruction, read-only: run the gh
-                    commands yourself (don't just tell the user what to
-                    run) and report..."                     <- wrapped, and
-                                                               an instruction
-                                                               the user never
-                                                               gave
+    Boss wrote   Confirmed: the recipient is Adrian. If exactly one Signal
+                 contact is named Adrian, open that conversation and send
+                 "hi". If there are several Adrians or none, stop and
+                 report the exact names.
+    worker got   Mm-hmm Ad yan
 
-Half the time. A rule a model follows half the time is not a rule, so it
-lives in code at send_to_task, the one point every follow-up passes.
+    Boss wrote   User: "Yes, just close PR two o one." Close #201 without
+                 merging. Don't restart or merge #199 yet; the user hasn't
+                 chosen that.
+    worker got   Yes, just close PR two o one
+
+and at 00:39:20Z a worker got two open utterances joined, the first of
+them meant for a different worker. Whether the manager relayed the words
+is now logged (manager.follow_up_paraphrased), never corrected.
 
 Also here: the backstop that was supposed to make the frontend's
 forwarding not matter was added to VoiceAgent._run_claude, which the
@@ -31,58 +36,54 @@ import asyncio
 import unittest
 from unittest import mock
 
-from conductor.global_conductor import GlobalConductor, hold_to_users_words
+from conductor.global_conductor import GlobalConductor, carries_users_words
 
 SAID = "run the gh commands and tell me which PRs are in flight"
 
+ADRIAN_SAID = "Mm-hmm Ad yan"
+ADRIAN_WROTE = ('Confirmed: the recipient is Adrian. If exactly one Signal '
+                'contact is named Adrian, open that conversation and send '
+                '"hi". If there are several Adrians or none, stop and report '
+                'the exact names.')
+CLOSE_SAID = "Yes, just close PR two o one"
+CLOSE_WROTE = ('User: "Yes, just close PR two o one." Close #201 without '
+               "merging. Don't restart or merge #199 yet; the user hasn't "
+               "chosen that.")
 
-class HoldingTheManagerToTheUsersWords(unittest.TestCase):
-    def test_the_users_own_sentence_passes_untouched(self):
-        sent, overruled = hold_to_users_words(SAID, SAID)
-        self.assertEqual(sent, SAID)
-        self.assertEqual(overruled, "")
 
-    def test_a_quoted_part_of_it_passes(self):
+class MeasuringTheManagerAgainstTheUsersWords(unittest.TestCase):
+    def test_the_users_own_sentence_carries_them(self):
+        self.assertTrue(carries_users_words(SAID, [SAID]))
+
+    def test_a_quoted_part_of_it_carries_them(self):
         """One utterance can be about two tasks; the manager routes a part
-        by quoting it, and a quote is still the user's words."""
-        sent, overruled = hold_to_users_words("tell me which PRs are in flight",
-                                              SAID)
-        self.assertEqual(sent, "tell me which PRs are in flight")
-        self.assertEqual(overruled, "")
+        by quoting it."""
+        self.assertTrue(carries_users_words("tell me which PRs are in flight",
+                                            [SAID]))
 
-    def test_framing_is_stripped_back_to_what_was_said(self):
-        """The real one from tonight."""
-        wrote = ("Here's the actual instruction, read-only: run the gh "
-                 "commands yourself (don't just tell the user what to run) "
-                 "and report which PRs are in flight")
-        sent, overruled = hold_to_users_words(wrote, SAID)
-        self.assertEqual(sent, SAID)
-        self.assertEqual(overruled, wrote)
-        self.assertNotIn("don't just tell the user", sent,
-                         "an instruction the user never gave got through")
-
-    def test_a_preface_is_stripped(self):
-        wrote = "Additional read-only question from the user: " + SAID
-        sent, _ = hold_to_users_words(wrote, SAID)
-        self.assertEqual(sent, SAID)
+    def test_a_quote_with_context_carries_them(self):
+        """How the Boss writes follow-ups now: the words, then the line of
+        context the worker needs."""
+        self.assertTrue(carries_users_words(CLOSE_WROTE, [CLOSE_SAID]))
 
     def test_punctuation_and_case_do_not_count_as_rewriting(self):
-        """Transcription noise the manager tidied is not a paraphrase."""
-        sent, overruled = hold_to_users_words(
-            "Run the gh commands and tell me which PRs are in flight.", SAID)
-        self.assertEqual(overruled, "")
+        self.assertTrue(carries_users_words(
+            "Run the gh commands and tell me which PRs are in flight.", [SAID]))
 
-    def test_nothing_spoken_leaves_the_message_alone(self):
+    def test_a_paraphrase_does_not(self):
+        self.assertFalse(carries_users_words(ADRIAN_WROTE, [ADRIAN_SAID]))
+
+    def test_nothing_spoken_has_no_answer(self):
         """A typed turn, or one the manager raised itself, has no
-        utterance to hold anything to."""
-        sent, overruled = hold_to_users_words("carry on with the plan", "")
-        self.assertEqual(sent, "carry on with the plan")
-        self.assertEqual(overruled, "")
+        utterance to measure anything against."""
+        self.assertIsNone(carries_users_words("carry on with the plan", []))
+        self.assertIsNone(carries_users_words("carry on", ["  "]))
 
 
 class ItHappensOnTheRealPath(unittest.TestCase):
     def conductor(self):
         gc = GlobalConductor.__new__(GlobalConductor)
+        gc._utterances = []
         gc._utterance = ""
         gc.manager = mock.Mock()
         gc.list_tasks = lambda: []
@@ -95,33 +96,54 @@ class ItHappensOnTheRealPath(unittest.TestCase):
         gc._touch = lambda *a: None
         return gc, inner
 
-    def test_send_to_task_sends_what_the_user_said(self):
-        gc, inner = self.conductor()
-        gc._utterance = SAID
-        asyncio.run(gc.send_to_task("task_a", "Here's the instruction: " + SAID))
-        inner.send_to_task.assert_awaited_once_with("task_a", SAID)
+    def events(self, gc):
+        return [c.args[0] for c in gc._emit.call_args_list]
 
-    def test_an_overrule_is_visible_in_the_log(self):
-        """Silently swapping the manager's text would hide how often the
-        prompt is being ignored, which is the number that decides whether
-        this rule stays."""
-        gc, _ = self.conductor()
-        gc._utterance = SAID
+    def test_the_instruction_is_what_the_worker_gets(self):
+        """The one that sent "Mm-hmm Ad yan" to a worker about to message
+        someone on Signal."""
+        gc, inner = self.conductor()
+        gc._utterances = [ADRIAN_SAID]
+        asyncio.run(gc.send_to_task("task_a", ADRIAN_WROTE))
+        inner.send_to_task.assert_awaited_once_with("task_a", ADRIAN_WROTE)
+
+    def test_the_context_after_a_yes_is_kept(self):
+        gc, inner = self.conductor()
+        gc._utterances = [CLOSE_SAID]
+        asyncio.run(gc.send_to_task("task_a", CLOSE_WROTE))
+        inner.send_to_task.assert_awaited_once_with("task_a", CLOSE_WROTE)
+        self.assertNotIn("manager.follow_up_paraphrased", self.events(gc))
+
+    def test_a_paraphrase_is_visible_in_the_log_and_still_sent(self):
+        """How often the manager authors is still the number worth
+        having; it is no longer a reason to throw its message away."""
+        gc, inner = self.conductor()
+        gc._utterances = [SAID]
         asyncio.run(gc.send_to_task("task_a", "The user wants PR status."))
-        events = [c.args[0] for c in gc._emit.call_args_list]
-        self.assertIn("manager.follow_up_rewritten", events)
+        inner.send_to_task.assert_awaited_once_with(
+            "task_a", "The user wants PR status.")
+        self.assertIn("manager.follow_up_paraphrased", self.events(gc))
+        self.assertNotIn("manager.follow_up_rewritten", self.events(gc))
+
+    def test_a_typed_turn_logs_nothing(self):
+        gc, inner = self.conductor()
+        asyncio.run(gc.send_to_task("task_a", "carry on with the plan"))
+        inner.send_to_task.assert_awaited_once_with("task_a",
+                                                    "carry on with the plan")
+        self.assertEqual(self.events(gc), [])
 
     def test_the_utterance_lasts_exactly_one_turn(self):
-        """Left behind, it would rewrite the NEXT turn's follow-up to
-        whatever was said before."""
+        """Left behind, it would be measured against the NEXT turn's
+        follow-up."""
         gc, _ = self.conductor()
 
         async def handle(text, conductor):
-            self.assertEqual(conductor._utterance, SAID)
+            self.assertEqual(conductor._utterances, [SAID])
             return mock.Mock(tool_calls=[], reply="ok")
         gc.manager.handle = handle
         with mock.patch("conductor.global_conductor.new_trace"):
             asyncio.run(gc.handle_user_message("x", utterance=SAID))
+        self.assertEqual(gc._utterances, [])
         self.assertEqual(gc._utterance, "")
 
     def test_the_utterance_is_cleared_even_when_the_turn_fails(self):
@@ -133,15 +155,13 @@ class ItHappensOnTheRealPath(unittest.TestCase):
         with mock.patch("conductor.global_conductor.new_trace"):
             with self.assertRaises(RuntimeError):
                 asyncio.run(gc.handle_user_message("x", utterance=SAID))
-        self.assertEqual(gc._utterance, "")
+        self.assertEqual(gc._utterances, [])
 
-
-    def test_overlapping_turns_are_held_to_everything_still_being_worked_on(self):
+    def test_overlapping_turns_never_put_one_turns_words_in_another(self):
         """Turns overlap: a visible Boss takes the next thing said mid-turn
-        and may act on both at once. A follow-up sent then is held to
-        everything the user has said that is still being worked on, in
-        order; once the first turn is answered, only the newer words
-        remain; nothing is left behind after the last."""
+        and may act on both at once. The joined utterance of two open
+        turns once reached a worker the first turn had nothing to do with
+        (00:39:20Z). Both follow-ups go as written."""
         gc, inner = self.conductor()
         second_started = asyncio.Event()
         first_ended = asyncio.Event()
@@ -169,8 +189,8 @@ class ItHappensOnTheRealPath(unittest.TestCase):
             asyncio.run(both())
         self.assertEqual(
             [c.args for c in inner.send_to_task.await_args_list],
-            [("task_a", "first thing second thing"), ("task_a", "second thing")])
-        self.assertEqual(gc._utterance, "")
+            [("task_a", "Here is what to do."), ("task_a", "And then this.")])
+        self.assertEqual(gc._utterances, [])
 
 
 try:                       # the audio stack is not installed everywhere

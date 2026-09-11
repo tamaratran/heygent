@@ -106,27 +106,32 @@ def _trailing_question(summary: str) -> str:
     return text[start + 2:] if start >= 0 else text
 
 
-def hold_to_users_words(message: str, utterance: str) -> tuple[str, str]:
-    """What actually goes to the worker, and what the manager wrote if it
-    was overruled ("" when it was not).
+def carries_users_words(message: str, utterances: list[str]) -> bool | None:
+    """Whether a follow-up carries what the user said: their whole
+    utterance inside it, or it inside their utterance (a quoted part).
+    None when nothing was spoken - a typed or manager-initiated turn has
+    no words to carry.
 
-    The manager's message is kept when it IS the user's words - the whole
-    utterance, or a part of it quoted for a task that only one part was
-    about. Anything else is the manager's phrasing, and the user's own
-    sentence goes instead: it has their emphasis, their terminology, and
-    only the instructions they gave.
-
-    The trade this makes, stated: one utterance aimed at two tasks reaches
-    both in full. The manager can still route a part by quoting it.
+    Measured, never enforced. This used to be hold_to_users_words, which
+    SENT the utterance in place of any follow-up that was not the user's
+    words. On 2026-09-10 it did that twelve times, and every time the
+    worker lost the instruction: the Boss already quotes the user and adds
+    only what the worker cannot infer, so what went instead was the bare
+    fragment. "Confirmed: the recipient is Adrian. If exactly one Signal
+    contact is named Adrian, open that conversation and send "hi"..." went
+    out as "Mm-hmm Ad yan"; "User: "Yes, just close PR two o one." Close
+    #201 without merging. Don't restart or merge #199 yet" as "Yes, just
+    close PR two o one"; and at 00:39:20Z a worker got two utterances
+    joined, the first of them meant for a different worker. A substitute
+    for the Boss's judgement cannot know which turn, which task, or what
+    "yes" answered. The manager prompt is the rule; this is the number.
     """
-    spoken = _normalise(utterance)
+    spoken = [_normalise(u) for u in utterances if _normalise(u)]
     if not spoken:
-        return message, ""            # nothing spoken: a typed or
-                                      # manager-initiated turn, unchanged
+        return None
     wrote = _normalise(message)
-    if wrote and wrote in spoken:
-        return message, ""            # their words, whole or a quoted part
-    return utterance.strip(), message
+    return bool(wrote) and any(wrote in said or said in wrote
+                               for said in spoken)
 
 
 # The task statuses in which a computer-use worker still holds the
@@ -197,10 +202,10 @@ class GlobalConductor:
         self._attention: dict[str, dict] = {}    # task_id -> {kind, text, id}
         self.approval_policy = approval_policy or ApprovalPolicy()
         # The user's own words behind the manager turns in progress, when
-        # they were spoken. send_to_task holds the manager to them. Turns
-        # can overlap (a visible Boss takes the next words mid-turn), so
-        # what is held to is everything said that is still being worked
-        # on, oldest first.
+        # they were spoken. send_to_task measures the manager's follow-ups
+        # against them. Turns can overlap (a visible Boss takes the next
+        # words mid-turn), so this is everything said that is still being
+        # worked on, oldest first - one list, never joined.
         self._utterances: list[str] = []
         self._utterance = ""
         self._open_turns = 0
@@ -1536,24 +1541,23 @@ class GlobalConductor:
 
     async def send_to_task(self, task_id: str, message: str,
                            project_id: str | None = None) -> None:
-        """Deliver a follow-up in the user's words, whatever the manager
-        wrote.
+        """Deliver the manager's follow-up exactly as it wrote it.
 
-        The manager prompt already says to relay verbatim - "you are a
-        switchboard here, not an author" - and the manager still sends
-        things like "Here's the actual instruction, read-only: run the gh
-        commands yourself (don't just tell the user what to run) ...":
-        framing the user never said, and an instruction they never gave.
-        Measured at 23:59 tonight, after the prompt was tightened. A rule a
-        model follows half the time is not a rule, so it lives here.
+        The manager prompt says to relay the user's words and add only
+        what a worker cannot act without. Whether it did is logged
+        (manager.follow_up_paraphrased) and never corrected here: the
+        correction replaced real instructions with speech fragments - see
+        carries_users_words for the night it was measured.
         """
         conductor, task = self._find_task(task_id)
-        message, replaced = hold_to_users_words(message, self._utterance)
-        if replaced:
-            self._emit("manager.follow_up_rewritten", "manager",
-                       task_id=task.id, severity="warning",
-                       data={"manager_wrote": replaced[:300],
-                             "sent_instead": message[:300]})
+        utterances = self._utterances if isinstance(self._utterances, list) \
+            else []
+        if carries_users_words(message, utterances) is False:
+            self._emit("manager.follow_up_paraphrased", "manager",
+                       task_id=task.id,
+                       data={"manager_wrote": message[:300],
+                             "open_utterances": [u[:150]
+                                                 for u in utterances[:3]]})
         await conductor.send_to_task(task_id, message)
         self._touch(task.project_id, task.id)
 
@@ -1592,6 +1596,10 @@ class GlobalConductor:
                     task.provider_session_id) == "running":
             if task.status == "paused":
                 conductor.store.update(task_id, status="running")
+            # "running" is the runtime's last word, not a look at the
+            # pane: a worker whose turn ended unread still says it. One
+            # at its prompt is told to go on; one at work is left alone.
+            await conductor.continue_if_idle(task)
             self._touch(task.project_id, task.id)
             return                    # idempotent: already running is a no-op
         if task.status == "paused" and task.provider_session_id and \
@@ -1927,7 +1935,7 @@ class GlobalConductor:
                                   utterance: str = "") -> ManagerTurn:
         """utterance is what the microphone heard, verbatim, when this turn
         was spoken. It is kept for the length of the turn so a follow-up
-        the manager sends can be held to the user's words."""
+        the manager sends can be measured against the user's words."""
         if self.manager is None:
             raise RuntimeError("no ManagerBackend configured")
         # Not serialized here. The backend decides: the SDK Boss takes

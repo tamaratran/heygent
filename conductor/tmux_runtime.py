@@ -319,6 +319,47 @@ def stream_path(name: str) -> Path:
     return STREAMS_DIR / f"{name}.raw"
 
 
+# What closes the input box from below: its bottom rule, and the status
+# and shortcut lines Claude Code draws under it.
+_BOX_ENDS = ("─", "⏵", "? for shortcuts")
+
+
+def _input_box(pane: str) -> str | None:
+    """Everything in the input box, joined across the lines it wraps onto.
+
+    Or None when no prompt line is on screen. The box starts on the last
+    line beginning with the prompt character; a message longer than the
+    pane is wide carries on underneath, indented, until the box's bottom
+    rule or the status line.
+
+    Reading only that first line is what lost a message on 2026-09-10.
+    The Boss sent task_84d3c789 a 239-character follow-up at 06:55:10;
+    the Enter did not take; and the delivery check looked for the
+    message's LAST forty characters on the prompt line - where a wrapped
+    message's ending never is. It reported "submitted" at once, the Boss
+    told the user it was sent, and the words sat in the worker's box for
+    four minutes until the user opened the window and pressed Enter.
+    """
+    lines = pane.splitlines()
+    start = None
+    for index in range(len(lines) - 1, -1, -1):
+        stripped = lines[index].strip()
+        if stripped and stripped.startswith(_PROMPT_CHARS):
+            start = index
+            break
+    if start is None:
+        return None
+    parts = [lines[start].strip()[1:]]
+    for line in lines[start + 1:]:
+        stripped = line.strip()
+        if not stripped or not line.startswith("  ") \
+                or stripped.startswith(_BOX_ENDS):
+            break
+        parts.append(stripped)
+    return " ".join(part.replace("\xa0", " ").strip()
+                    for part in parts).strip()
+
+
 def _typed_but_unsent(pane: str) -> str:
     """What the USER has half-written in the input box, or "".
 
@@ -332,17 +373,12 @@ def _typed_but_unsent(pane: str) -> str:
     The person wins. They are typing right now; the follow-up can wait for
     the box to clear.
     """
-    for line in reversed([l for l in pane.splitlines() if l.strip()]):
-        stripped = line.strip()
-        if not stripped.startswith(_PROMPT_CHARS):
-            continue
-        rest = stripped[1:].replace("\xa0", " ").strip()
-        if not rest:
-            return ""
-        if rest.lower().startswith(_PLACEHOLDERS):
-            return ""             # the provider's own hint text, not input
-        return rest[:200]
-    return ""
+    box = _input_box(pane)
+    if not box:
+        return ""
+    if box.lower().startswith(_PLACEHOLDERS):
+        return ""                 # the provider's own hint text, not input
+    return box
 
 
 class DuplicateSession(RuntimeError):
@@ -427,17 +463,58 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         return subprocess.run(["tmux", *args], capture_output=True,
                               text=True)
 
-    @staticmethod
-    def _send_argv(name: str, message: str) -> list[list[str]]:
-        """send-keys argv pairs: the literal text, then Enter. -l keeps tmux
-        from interpreting the message as key names.
+    # The keyboard is not a pipe. Measured 2026-09-01 08:36:24Z: a 2,353
+    # character worker finish, typed in one send-keys, reached the Boss as
+    # 1,404 characters - 1,022 gone from the MIDDLE, the two halves spliced
+    # mid-word ("a `View sess" + "for the browser version") - and the Boss
+    # then reasoned, and spoke to the user, from text nobody wrote. Nothing
+    # reported it: _confirm_submitted looks at the last 40 characters, and
+    # those had arrived. A long message goes in pieces the PTY can drain,
+    # with a breath between them.
+    SEND_CHUNK_CHARS = 400
+    SEND_CHUNK_PAUSE_S = 0.05
+
+    @classmethod
+    def _chunks(cls, message: str) -> list[str]:
+        """message in pieces of at most SEND_CHUNK_CHARS. Concatenating
+        them gives the message back exactly, character for character.
+
+        The split lands INSIDE a word wherever it can: a piece that began
+        or ended with a space would be at the mercy of every layer between
+        here and the pane - send-keys, cmux's `send`, a shell - and one
+        trimmed space is the same silent corruption in miniature that this
+        whole change exists to stop. A word arriving in two halves is not
+        a risk; the box concatenates what it is typed.
+        """
+        limit = cls.SEND_CHUNK_CHARS
+        rest, out = message, []
+        while len(rest) > limit:
+            cut = limit
+            while cut > limit // 2 and (rest[cut - 1].isspace()
+                                        or rest[cut].isspace()):
+                cut -= 1                  # off the whitespace, into a word
+            if cut <= limit // 2:         # a long run of spaces: cut anyway
+                cut = limit
+            out.append(rest[:cut])
+            rest = rest[cut:]
+        if rest or not out:
+            out.append(rest)
+        return out
+
+    @classmethod
+    def _send_argv(cls, name: str, message: str) -> list[list[str]]:
+        """send-keys argv: the literal text - in chunks when it is long -
+        then Enter. -l keeps tmux from interpreting the message as key
+        names, and the pane accumulates the chunks in its input box, so
+        only the final Enter submits.
 
         Kept for callers that want the argv; delivery goes through _tmux so
         that every pane operation has ONE seam. It did not, and a subclass
         hosting workers elsewhere had its follow-ups sent to real tmux -
         which reported a pane it had never heard of."""
-        return [["send-keys", "-t", name, "-l", message],
-                ["send-keys", "-t", name, "Enter"]]
+        return [["send-keys", "-t", name, "-l", chunk]
+                for chunk in cls._chunks(message)] + \
+               [["send-keys", "-t", name, "Enter"]]
 
     def _alive(self, name: str) -> bool:
         return self._tmux("has-session", "-t", name).returncode == 0
@@ -1174,10 +1251,29 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             result = await self._off_loop(self._tmux, *argv)
             if result.returncode != 0:
                 raise RuntimeError(f"send-keys failed: {result.stderr}")
-        await self._confirm_submitted(sess, message)
+            if "-l" in argv:
+                # Between chunks, and once more before Enter: the pause is
+                # what makes the pieces arrive whole (see SEND_CHUNK_CHARS).
+                await asyncio.sleep(self.SEND_CHUNK_PAUSE_S)
+        try:
+            await self._confirm_submitted(sess, message,
+                                          timeout=self.CONFIRM_S)
+        except RuntimeError:
+            # The words are in the box and the Enter did not take. Press
+            # it once more rather than report a message that is sitting
+            # there unsent - once, because a box that will not submit
+            # after two is a real failure, and the caller must hear it.
+            application_log("runtime", "send.enter_retried",
+                            f"{sess.name}: the message was still in the "
+                            "input box after Enter; pressing it again",
+                            severity="warning", task_id=sess.task_id)
+            await self._off_loop(self._tmux, "send-keys", "-t", sess.name,
+                                 "Enter")
+            await self._confirm_submitted(sess, message,
+                                          timeout=self.CONFIRM_RETRY_S)
         if draft:
-            # Ours is in; theirs goes back where it was, unsent. One line
-            # of it: that is what the screen showed and what was read.
+            # Ours is in; theirs goes back where it was, unsent - all of
+            # it, however many lines it wrapped onto.
             await self._off_loop(self._tmux, "send-keys", "-t", sess.name,
                                  "-l", draft)
             application_log("runtime", "send.draft_restored",
@@ -1189,6 +1285,12 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
     # this is a queued message, not an idle draft, and Enter would submit
     # both into the queue.
     BUSY_MARK = "esc to interrupt"
+
+    # How long a sent message may sit in the box before its Enter is
+    # pressed again, and how long the second one gets before the send
+    # fails. The box clears within a redraw when Enter takes.
+    CONFIRM_S = 1.5
+    CONFIRM_RETRY_S = 4.0
 
     async def _wait_for_input(self, sess: "_TmuxSession",
                               timeout: float = 45.0) -> str:
@@ -1260,17 +1362,21 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
 
     async def _confirm_submitted(self, sess: "_TmuxSession", message: str,
                                  timeout: float = 4.0) -> None:
-        """The text leaving the input box is the acknowledgement."""
-        tail = " ".join(message.split())[-40:]
+        """The text leaving the input box is the acknowledgement.
+
+        Read from the WHOLE box (see _input_box), and compared with every
+        space taken out: the box wraps a long message wherever the pane's
+        width falls, sometimes inside a word, and a check that only
+        matched the text as typed would call a wrapped message sent.
+        """
+        tail = "".join(message.split())[-40:]
         if not tail:
             return
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             pane = await self._pane(sess.name)
-            lines = [l.strip() for l in pane.splitlines() if l.strip()]
-            pending = next((l for l in reversed(lines)
-                            if l.startswith(("\u276f", ">"))), "")
-            if tail not in " ".join(pending.split()):
+            box = _input_box(pane) or ""
+            if tail not in "".join(box.split()):
                 return                        # submitted
             await asyncio.sleep(0.3)
         raise RuntimeError(
@@ -1434,6 +1540,24 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                 stale.watcher.cancel()
             self._readopt(session_id, cwd, name)
             return
+        # Where the resumed process will go on writing, and how much of it
+        # is history - read BEFORE it starts, so nothing it writes is
+        # missed. A session this runtime has never seen was built without
+        # a transcript, and a watcher with no transcript reads the screen
+        # through the adapter - which for Claude Code answers nothing. So
+        # every worker resumed after a restart ran unread: measured
+        # 2026-09-11, task_3ef16ed0 was resumed at 00:31:49Z, took a
+        # follow-up at 00:32:57, worked four minutes and ended its turn
+        # with its findings at 00:36:11 - and the conductor logged not one
+        # event. The card said "Running a command" from twenty minutes
+        # before, the Boss called the worker stuck, and paused it.
+        path = self.adapter.transcript_for(cwd, session_id)
+        offset = None
+        if path is not None:
+            try:
+                offset = path.stat().st_size
+            except OSError:
+                offset = 0
         result = await self._off_loop(
             self._tmux, "new-session", "-d", "-s", name, "-c", cwd,
             *scrub_argv(task_id, self.home),
@@ -1466,6 +1590,8 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                                 working_directory=cwd,
                                 session_id=session_id)
             self.sessions[session_id] = sess
+        if sess.jsonl_path is None and offset is not None:
+            sess.jsonl_path, sess.offset = path, offset
         # claude --resume takes seconds to draw its TUI. Returning before it
         # is ready means the next send-keys types into a booting screen: the
         # text lands in the input box and the Enter is swallowed, so the
@@ -1533,6 +1659,29 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         # sample, so asking would be a subprocess per status check to learn
         # nothing.
         return sess.status
+
+    async def at_prompt(self, session_id: str) -> bool | None:
+        """Is this worker sitting at its input prompt with nothing to do -
+        no turn running, no dialog or approval up? None when this runtime
+        cannot tell (no such session, or its PTY is gone).
+
+        What resume_task asks before it says "ok": a resumed process is
+        at its prompt, not at work. `claude --resume` writes "Continue
+        from where you left off." and answers itself "No response
+        requested." (2026-09-11 00:31:50Z, task_3ef16ed0), and a revived
+        pane is no busier."""
+        sess = self.sessions.get(session_id)
+        if sess is None or not await self._off_loop(self._alive, sess.name):
+            return None
+        if sess.pending_approval is not None:
+            return False
+        pane = await self._pane(sess.name)
+        if self.adapter.startup_dialog(pane) is not None or \
+                self.adapter.approval_prompt(pane) is not None:
+            return False
+        if self.BUSY_MARK in pane.lower():
+            return False
+        return self.adapter.prompt_ready(pane)
 
     def live_session_names(self) -> set | None:
         """Every PTY tmux currently has, by name - or None if we could not

@@ -174,6 +174,8 @@ def normalize_entry(entry: dict, state: dict) -> list[AgentEvent]:
     kind = entry.get("type")
     message = entry.get("message") or {}
     content = message.get("content")
+    if _resume_filler(entry, kind, message, content):
+        return []
 
     if kind == "user":
         if state.pop("turn_ending", False):
@@ -233,6 +235,26 @@ def normalize_entry(entry: dict, state: dict) -> list[AgentEvent]:
         if state.pop("turn_ending", False):
             events.append(_turn_end(state))
     return events
+
+
+def _resume_filler(entry: dict, kind, message: dict, content) -> bool:
+    """The pair `claude --resume` writes on its own, before anyone speaks:
+    an isMeta user line "Continue from where you left off." and a
+    synthetic assistant "No response requested." (measured on 2.1.268,
+    task_3ef16ed0, 2026-09-11 00:31:50Z). Neither is a turn. Read as one,
+    the Boss would be told the worker had finished with "No response
+    requested." the moment it was resumed. A synthetic API error is a
+    real turn end and is kept."""
+    texts = [content.strip()] if isinstance(content, str) else [
+        block.get("text", "").strip() for block in (content or [])
+        if isinstance(block, dict) and block.get("type") == "text"]
+    if kind == "user":
+        return bool(entry.get("isMeta")) and \
+            texts == ["Continue from where you left off."]
+    if kind == "assistant" and message.get("model") == "<synthetic>" \
+            and not entry.get("isApiErrorMessage"):
+        return texts == ["No response requested."]
+    return False
 
 
 def _turn_end(state: dict) -> AgentEvent:

@@ -235,6 +235,66 @@ class SendDeliveryTest(unittest.TestCase):
         rt._tmux = fake_tmux
         return rt, sess
 
+    def test_a_long_message_is_typed_in_pieces_and_arrives_whole(self) -> None:
+        """The real one, 2026-09-01 08:36:24Z: a 2,353-character worker
+        finish typed in ONE send-keys reached the Boss as 1,404 characters,
+        1,022 gone from the middle and the halves spliced mid-word. The
+        Boss then reasoned, and spoke to the user, from text nobody wrote.
+
+        Long text goes in pieces small enough for the PTY to drain, and
+        the pieces put back together are the message exactly - a split
+        that tidied whitespace would change what the worker reads.
+        """
+        import asyncio
+        from conductor.tmux_runtime import TmuxClaudeRuntime
+        finish = ("Investigation complete. " + "word " * 500).strip()
+        ready = "❯ \n  ⏵⏵ accept edits on (shift+tab to cycle)\n"
+        rt, sess = self.runtime([ready])
+        calls = []
+        real = rt._tmux
+
+        def recording(*args):
+            calls.append(list(args))
+            return real(*args)
+        rt._tmux = recording
+        asyncio.run(rt.send("s", finish))
+
+        typed = [c[4] for c in calls if c[0] == "send-keys" and "-l" in c]
+        self.assertGreater(len(typed), 1, "still typed in one burst")
+        self.assertEqual("".join(typed), finish,
+                         "the message did not survive being split")
+        for chunk in typed:
+            self.assertLessEqual(len(chunk), TmuxClaudeRuntime.SEND_CHUNK_CHARS)
+        enters = [c for c in calls if c[0] == "send-keys" and "Enter" in c]
+        self.assertEqual(len(enters), 1, "each chunk submitted on its own")
+        keys = [c for c in calls if c[0] == "send-keys"]
+        self.assertEqual(keys[-1][-1], "Enter", "Enter must come last")
+
+    def test_a_short_message_is_still_one_keystroke(self) -> None:
+        """No new round trips for the ordinary case."""
+        from conductor.tmux_runtime import TmuxClaudeRuntime
+        argv = TmuxClaudeRuntime._send_argv("cond_t", "run the tests")
+        self.assertEqual(len(argv), 2)
+        self.assertEqual(argv[0][4], "run the tests")
+
+    def test_chunks_never_add_or_lose_a_character(self) -> None:
+        from conductor.tmux_runtime import TmuxClaudeRuntime
+        for text in ("", "x", "x" * 401,
+                     "a" * 399 + " " + "b" * 400,
+                     "no spaces at all " + "z" * 1200,
+                     "sentence one. " * 300):
+            chunks = TmuxClaudeRuntime._chunks(text)
+            self.assertEqual("".join(chunks), text)
+            self.assertTrue(all(len(c) <= TmuxClaudeRuntime.SEND_CHUNK_CHARS
+                                for c in chunks), text[:20])
+            # No piece may begin or end on whitespace: anything between
+            # here and the pane is entitled to trim that, and a trimmed
+            # space is the same silent corruption in miniature.
+            for chunk in chunks[:-1] if len(chunks) > 1 else []:
+                self.assertFalse(chunk[-1].isspace(), repr(chunk[-40:]))
+            for chunk in chunks[1:]:
+                self.assertFalse(chunk[0].isspace(), repr(chunk[:40]))
+
     def test_waits_for_a_dialog_to_clear_before_typing(self) -> None:
         import asyncio
         from conductor.tmux_runtime import TmuxClaudeRuntime
@@ -268,6 +328,105 @@ class SendDeliveryTest(unittest.TestCase):
         cleared = "❯ \n  ⏵⏵ accept edits on\n"
         rt, sess = self.runtime([cleared])
         asyncio.run(rt._confirm_submitted(sess, "already submitted", timeout=1))
+
+    # -- a message longer than the box is wide ---------------------------
+    # 2026-09-10: the Boss sent task_84d3c789 a 239-character follow-up at
+    # 06:55:10. The Enter did not take, the delivery check read only the
+    # prompt line - where a wrapped message's ending never is - and said
+    # "submitted" at once. The words sat in the box for four minutes until
+    # the user opened the window and pressed Enter themselves.
+    SPOKEN = ("Let's look deeper into how the intent pilot project does "
+              "computer use differently than we do it. I think they do some "
+              "scripting as well of apps and stuff and try to do stuff in "
+              "the background before, um, ending up clicking around and "
+              "stuff")
+    RULE = "─" * 60
+
+    def box(self, *lines: str) -> str:
+        """The real layout: a rule above, the prompt line, its wrapped
+        continuation lines, a rule below, the status line."""
+        return ("  Bottom line: done.\n" + self.RULE + "\n" + "\n".join(lines)
+                + "\n" + self.RULE + "\n  ⏵⏵ auto mode on (shift+tab to cycle)\n")
+
+    def wrapped(self) -> str:
+        return self.box(
+            "❯ Let's look deeper into how the intent pilot project does computer use differently than",
+            "  we do it. I think they do some scripting as well of apps and stuff and try to do stuff",
+            "  in the background before, um, ending up clicking around and stuff")
+
+    def test_a_wrapped_message_left_in_the_box_is_an_error(self) -> None:
+        import asyncio
+        rt, sess = self.runtime([self.wrapped()])
+        with self.assertRaises(RuntimeError) as caught:
+            asyncio.run(rt._confirm_submitted(sess, self.SPOKEN, timeout=1))
+        self.assertIn("not submitted", str(caught.exception))
+
+    def test_a_word_the_wrap_cut_in_half_is_still_the_message(self) -> None:
+        """The box wraps where the width falls, sometimes mid-word."""
+        import asyncio
+        split = self.box(
+            "❯ Let's look deeper into how the intent pilot project does computer use differently than we do it. I think they do so",
+            "  me scripting as well of apps and stuff and try to do stuff in the background before, um, ending up clicking aro",
+            "  und and stuff")
+        rt, sess = self.runtime([split])
+        with self.assertRaises(RuntimeError):
+            asyncio.run(rt._confirm_submitted(sess, self.SPOKEN, timeout=1))
+
+    def keyboard(self, rt, takes_on_enter: int | None):
+        """A worker whose box holds what was typed until the Nth Enter
+        (None: never). Returns the list of keys pressed."""
+        empty = self.box("❯ ")
+        state = {"typed": False, "enters": 0}
+        keys = []
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def fake_tmux(*args):
+            r = Result()
+            if args[0] == "send-keys":
+                keys.append(args[-1])
+                if "-l" in args:
+                    state["typed"] = True
+                elif args[-1] == "Enter":
+                    state["enters"] += 1
+            elif args[0] == "capture-pane":
+                cleared = takes_on_enter is not None \
+                    and state["enters"] >= takes_on_enter
+                r.stdout = self.wrapped() if state["typed"] and not cleared \
+                    else empty
+            return r
+        rt._tmux = fake_tmux
+        rt.CONFIRM_S = 0.4
+        rt.CONFIRM_RETRY_S = 0.8
+        return keys
+
+    def test_a_swallowed_enter_is_pressed_once_more(self) -> None:
+        import asyncio
+        rt, sess = self.runtime([""])
+        keys = self.keyboard(rt, takes_on_enter=2)
+        asyncio.run(rt.send("s", self.SPOKEN))
+        self.assertEqual(keys.count("Enter"), 2)
+
+    def test_an_enter_that_never_takes_is_still_a_failure(self) -> None:
+        """Once more, not for ever: a box that will not submit after two
+        is a real failure and the caller has to hear about it."""
+        import asyncio
+        rt, sess = self.runtime([""])
+        keys = self.keyboard(rt, takes_on_enter=None)
+        with self.assertRaises(RuntimeError) as caught:
+            asyncio.run(rt.send("s", self.SPOKEN))
+        self.assertIn("not submitted", str(caught.exception))
+        self.assertEqual(keys.count("Enter"), 2)
+
+    def test_a_delivered_message_is_not_entered_twice(self) -> None:
+        import asyncio
+        rt, sess = self.runtime([""])
+        keys = self.keyboard(rt, takes_on_enter=1)
+        asyncio.run(rt.send("s", self.SPOKEN))
+        self.assertEqual(keys.count("Enter"), 1)
 
     # -- a draft in the box ----------------------------------------------
     # Measured on the Boss window: two stray characters ('s now') and every

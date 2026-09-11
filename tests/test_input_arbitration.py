@@ -58,6 +58,27 @@ class ReadingTheInputBox(unittest.TestCase):
         queued = READY.replace(EMPTY, "❯\xa0Press up to edit queued messages")
         self.assertEqual(_typed_but_unsent(queued), "")
 
+    def test_a_draft_that_wraps_is_read_whole(self):
+        """Only its first line used to be read. send sets the draft aside
+        with Ctrl-U - which clears the whole box - and typed back what
+        was read, so everything past the first line was gone."""
+        pane = READY.replace(
+            EMPTY, "❯\xa0also check the billing tests and then\n"
+                   "  the invoice export while you are there")
+        self.assertEqual(_typed_but_unsent(pane),
+                         "also check the billing tests and then "
+                         "the invoice export while you are there")
+
+    def test_the_real_layout_around_an_empty_box_is_not_a_draft(self):
+        """Measured on a live worker: a rule above the box, a rule below
+        it, and the status line under that - indented like a wrapped
+        line, which is exactly why it must not be read as one."""
+        rule = "\u2500" * 40
+        pane = (f"  Bottom line: done.\n{rule}\n{EMPTY}\n{rule}\n"
+                "  \u23f5\u23f5 auto mode on (shift+tab to cycle) \u00b7 "
+                "esc to interrupt\n")
+        self.assertEqual(_typed_but_unsent(pane), "")
+
     def test_transcript_text_is_not_mistaken_for_the_box(self):
         """Only the last prompt line counts; the conversation above it is
         full of lines that start with the same characters."""
