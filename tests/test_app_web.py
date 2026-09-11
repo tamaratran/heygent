@@ -1040,6 +1040,145 @@ class TheSessions(unittest.TestCase):
              "status": "Still open", "glyph": "open"}])
 
 
+class TheRemovedCard(unittest.TestCase):
+    """Asked 2026-09-11: the user removes a worker's card from the
+    sidebar themselves. Only the card goes - the worker's work and
+    branch stay - and a worker still running is never stopped, nor its
+    card taken away without saying so."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.worktree = self.home / "workspaces" / "task_done"
+        self.worktree.mkdir(parents=True)
+        (self.worktree / "work.py").write_text("print('kept')\n")
+        turn_toast.write_sessions(self.home, [
+            {"task_id": "task_done", "title": "Fix login",
+             "status": "tests pass", "glyph": "done"},
+            {"task_id": "task_busy", "title": "Refactor storage",
+             "status": "Reading storage.py", "glyph": "working"}])
+        # Nothing a removal does may start a process: no tmux kill, no
+        # git, no signal. The host listing is a stub, so any call at all
+        # is the removal reaching for the worker.
+        from unittest import mock
+        import conductor.app_web as app_web
+        self.spawned = []
+
+        def refuse(*args, **kwargs):
+            self.spawned.append(args)
+            raise AssertionError(f"a removal ran {args}")
+        for patch in (mock.patch.object(app_web.subprocess, "run", refuse),
+                      mock.patch.object(app_web.subprocess, "Popen", refuse),
+                      mock.patch.object(app_web.os, "kill", refuse)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def web(self) -> CodexWeb:
+        web = CodexWeb(app(), home=self.home)
+        web.list_cmux = lambda: ["task_busy", "task_open"]
+        return web
+
+    def ids(self, web: CodexWeb) -> list[str]:
+        return [row["task_id"] for row in web.sessions()]
+
+    def test_a_finished_card_goes_and_stays_gone_after_a_restart(self):
+        web = self.web()
+        self.assertEqual(web.remove_session("task_done"),
+                         {"ok": True, "removed": True, "running": False})
+        self.assertNotIn("task_done", self.ids(web))
+        self.assertNotIn("task_done", self.ids(self.web()))   # a restart
+        # The work is where it was.
+        self.assertEqual((self.worktree / "work.py").read_text(),
+                         "print('kept')\n")
+        self.assertEqual(self.spawned, [])
+
+    def test_a_running_worker_is_asked_about_first(self):
+        web = self.web()
+        asked = web.remove_session("task_busy")
+        self.assertFalse(asked["ok"])
+        self.assertTrue(asked["running"])
+        self.assertIn("Refactor storage is still working", asked["message"])
+        self.assertIn("will not stop it", asked["message"])
+        self.assertIn("task_busy", self.ids(web), "removed without a yes")
+        done = web.remove_session("task_busy", confirmed=True)
+        self.assertEqual(done, {"ok": True, "removed": True, "running": True})
+        self.assertNotIn("task_busy", self.ids(web))
+        self.assertEqual(self.spawned, [])
+
+    def test_an_open_session_or_a_question_is_asked_about_too(self):
+        web = self.web()
+        self.assertIn("may be running",
+                      web.remove_session("task_open")["message"])
+        turn_toast.write_sessions(self.home, [
+            {"task_id": "task_ask", "title": "Deploy",
+             "status": "Needs approval", "glyph": "attention"}])
+        self.assertIn("Deploy is waiting for you",
+                      web.remove_session("task_ask")["message"])
+
+    def test_a_removed_running_card_comes_back_when_it_finishes(self):
+        web = self.web()
+        web.remove_session("task_busy", confirmed=True)
+        turn_toast.write_sessions(self.home, [
+            {"task_id": "task_busy", "title": "Refactor storage",
+             "status": "Reading more files", "glyph": "working"}])
+        self.assertNotIn("task_busy", self.ids(web), "progress is not news")
+        turn_toast.write_sessions(self.home, [
+            {"task_id": "task_busy", "title": "Refactor storage",
+             "status": "storage split in two", "glyph": "done"}])
+        self.assertIn("task_busy", self.ids(web))
+        self.assertIn("task_busy", self.ids(self.web()))   # and stays back
+
+    def test_an_unlisted_or_bad_id_removes_nothing(self):
+        web = self.web()
+        self.assertEqual(web.remove_session("task_nobody"),
+                         {"ok": True, "removed": False})
+        self.assertFalse(web.remove_session("../boss")["ok"])
+        self.assertEqual(self.ids(web), ["task_busy", "task_done",
+                                         "task_open"])
+
+    def test_the_door_answers_over_http_and_the_bridge(self):
+        from conductor.app_web import WindowBridge
+
+        async def go():
+            web = self.web()
+            port = await web.start()
+            _, asked = await http(port, "POST", "/remove",
+                                  {"task_id": "task_busy"})
+            _, removed = await http(port, "POST", "/remove",
+                                    {"task_id": "task_done"})
+            bridged = await WindowBridge(web).handle(
+                "/remove", {"task_id": "task_busy", "confirmed": True})
+            _, rows = await http(port, "GET", "/sessions")
+            await web.stop()
+            return json.loads(asked), json.loads(removed), bridged, \
+                json.loads(rows)
+        asked, removed, bridged, rows = run(go())
+        self.assertTrue(asked["running"])
+        self.assertTrue(removed["removed"])
+        self.assertTrue(bridged["removed"])
+        self.assertEqual([r["task_id"] for r in rows["rows"]], ["task_open"])
+        # The Boss row still counts the removed worker that is running.
+        self.assertEqual(rows["hidden_running"], 1)
+
+    def test_a_removed_running_worker_is_still_waited_for(self):
+        web = self.web()
+        web.remove_session("task_busy", confirmed=True)
+        web.remove_session("task_done")
+        web.sessions()
+        self.assertEqual(web.hidden_running, 1)
+        from conductor.app_web import PAGE
+        self.assertIn("live += data.hidden_running || 0;", PAGE)
+
+    def test_the_page_asks_in_the_row_and_closes_a_removed_terminal(self):
+        from conductor.app_web import PAGE
+        self.assertIn('post("/remove"', PAGE)
+        self.assertIn("removeQuestion(asking)", PAGE)
+        self.assertIn("termId === taskId) closeTerm()", PAGE)
+
+
 class TheNames(unittest.TestCase):
     def test_a_session_once_named_keeps_its_name(self):
         """The sessions file trims and restarts empty; a workspace it
