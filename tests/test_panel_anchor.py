@@ -86,6 +86,55 @@ class PanelAnchorTest(unittest.TestCase):
         self.assertGreater(len(drops), 5, "it glided, it did not jump")
         self.assertLess(max(drops), (heights[0] - resting) / 2)
 
+    def test_the_caption_leaving_does_not_drop_the_reply_card(self):
+        c = self.controller()
+        c.show_card(spinner())
+        c.show_caption("a caption pushes the card up")
+        lifted = c.card_base
+        self.assertEqual(lifted, c.card_target())
+        c.hide_caption()
+        self.assertEqual(c.card_base, lifted)
+        self.assertGreater(c.card_settle_at, 0.0)
+
+    def test_the_panel_stacks_on_the_held_card(self):
+        c = self.controller()
+        c.show_card(spinner())
+        c.show_caption("a caption pushes the card up")
+        c.hide_caption()
+        self.assertEqual(c.panel_base, c.stack_base())
+        self.assertGreater(c.stack_base(), c.card_target())
+
+    def test_the_card_glides_down_with_the_panel_riding_it(self):
+        c = self.controller()
+        c.show_card(spinner())
+        resting = c.card_base
+        c.show_caption("a caption pushes the card up")
+        c.hide_caption()
+        now = c.card_settle_at + 0.1
+        heights = [c.card_base]
+        with patch.object(overlay.time, "monotonic", return_value=now):
+            for _ in range(200):
+                # A test's stdin is at EOF, so the reader thread queues a
+                # quit that _drain would obey - and the run would silently
+                # end here. The tick under test is the settle, not the drain.
+                with c.lock:
+                    c.pending.clear()
+                c.tick_(None)
+                heights.append(c.card_base)
+                self.assertEqual(c.panel_base, c.stack_base())
+        self.assertEqual(c.card_base, resting)
+        drops = [a - b for a, b in zip(heights, heights[1:]) if a != b]
+        self.assertGreater(len(drops), 5, "it glided, it did not jump")
+
+    def test_dismissing_the_card_forgets_its_baseline(self):
+        c = self.controller()
+        c.show_card(spinner())
+        c.show_caption("a caption pushes the card up")
+        c.hide_caption()
+        c.hide_card()
+        self.assertEqual(c.card_base, 0.0)
+        self.assertEqual(c.card_settle_at, 0.0)
+
     def test_an_empty_panel_forgets_its_baseline(self):
         c = self.controller()
         c.show_card(spinner())

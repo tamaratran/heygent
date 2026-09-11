@@ -293,19 +293,19 @@ class StackOverlapTest(unittest.TestCase):
         self.assertIn("render_panel", body,
                       "the panel keeps a gap for a card that is gone")
 
-    def test_panel_clears_the_cards_overhanging_close_button(self) -> None:
-        """The x overhangs the reply card's top edge by half its diameter,
-        so the gap between that card and the panel above has to clear it.
-
-        The first version of this asserted PANEL_GAP + CARD_INSET, which
-        passed comfortably and measured the wrong thing: CARD_INSET is the
-        margin inside the window, not the space between the two cards. The
-        real gap was 10pt against a 12pt overhang, and the button sat on the
-        card above by two points.
+    def test_panel_keeps_the_one_gap_above_the_reply_card(self) -> None:
+        """PANEL_GAP is the one spacing token, and the reply card gets the
+        same gap the panel keeps between its own cards - whose overhanging
+        x buttons live inside that gap too. Widening it to clear the x made
+        the reply card float apart from the stack.
         """
         source = Path(overlay.__file__).read_text()
-        self.assertIn("PANEL_GAP + CLOSE_D / 2", source,
-                      "the panel does not account for the overhanging x")
+        self.assertIn("card_top + PANEL_GAP\n", source,
+                      "the reply card's gap drifted from PANEL_GAP")
+        body = source[source.index("def stack_base"):]
+        body = body[:body.index("\n    def ", 10)]
+        self.assertNotIn("CLOSE_D", body,
+                         "the panel pads extra air for the overhanging x")
 
 
 @unittest.skipUnless(HAVE_APPKIT, "pyobjc/AppKit not available")
@@ -315,10 +315,11 @@ class StackAsOneObjectTest(unittest.TestCase):
     def test_every_window_honours_the_shared_offset(self) -> None:
         """Capsule, caption, panel, reply card and the collapsed badge."""
         source = Path(overlay.__file__).read_text()
-        # render_panel's window placement lives in _place_panel, which the
-        # settle glide in tick_ shares.
+        # render_panel's and layout_card's window placements live in
+        # _place_panel and _place_card, which the settle glide in tick_
+        # shares.
         positioners = ("_resize", "show_caption", "_place_panel",
-                       "layout_card", "render_badge")
+                       "_place_card", "render_badge")
         for name in positioners:
             start = source.index(f"def {name}")
             end = source.find("\n    def ", start + 10)
