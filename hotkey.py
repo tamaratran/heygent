@@ -71,9 +71,47 @@ from __future__ import annotations
 import json
 import sys
 import time
+from pathlib import Path
 
 FN_MASK = 0x800000  # kCGEventFlagMaskSecondaryFn
 NUMPAD_MASK = 0x200000  # kCGEventFlagMaskNumericPad
+
+# The keys a user may choose for push-to-talk. All are modifiers, so every
+# one arrives on the same flagsChanged stream as Fn and the listen-only
+# tap never has to swallow a keystroke.
+KEY_MASKS = {
+    "fn": FN_MASK,
+    "control": 0x40000,   # kCGEventFlagMaskControl
+    "option": 0x80000,    # kCGEventFlagMaskAlternate
+    "command": 0x100000,  # kCGEventFlagMaskCommand
+}
+KEY_LABELS = {"fn": "Fn", "control": "Control",
+              "option": "Option", "command": "Command"}
+KEY_GLYPHS = {"fn": "fn", "control": "\u2303", "option": "\u2325",
+              "command": "\u2318"}
+
+# Where the choice lives: the conductor home, next to global.json. A file
+# of its own rather than global.json because this is read by hotkey.py at
+# start and written by onboarding.py, neither of which owns that registry.
+CONFIG_PATH = Path.home() / ".voice-conductor" / "hotkey.json"
+
+
+def chosen_key(path: Path | str = CONFIG_PATH) -> str:
+    """The configured push-to-talk key, falling back to Fn."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return "fn"
+    key = data.get("key") if isinstance(data, dict) else None
+    return key if key in KEY_MASKS else "fn"
+
+
+def save_key(key: str, path: Path | str = CONFIG_PATH) -> None:
+    if key not in KEY_MASKS:
+        raise ValueError(f"not a supported push-to-talk key: {key!r}")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"key": key}, indent=2))
 
 
 def fn_held(flags: int) -> bool:
@@ -88,6 +126,14 @@ def fn_held(flags: int) -> bool:
     a 0.0 ms "hold" (measured, 2026-08-28). The user was not pressing Fn.
     """
     return bool(flags & FN_MASK) and not (flags & NUMPAD_MASK)
+
+
+def key_held(flags: int, key: str = "fn") -> bool:
+    """Whether these modifier flags mean the chosen key is down."""
+    if key == "fn":
+        return fn_held(flags)
+    return bool(flags & KEY_MASKS[key])
+
 
 # How long the key must stay up before a release is believed. Long enough to
 # outlast the flag dropping out on its own, short enough that nobody can
@@ -293,6 +339,9 @@ def main() -> int:
     taps = DoubleTap()
     tap = None
     polling = True
+    key = chosen_key()
+    if key != "fn":
+        note(f"push-to-talk key: {KEY_LABELS[key]} (from {CONFIG_PATH})")
 
     def report(state: bool | None, source: str = "", flags: int = 0) -> None:
         # Where the edge came from and the raw flags travel with it, so a
@@ -327,7 +376,7 @@ def main() -> int:
             note(f"event tap disabled ({event_type}); re-enabled")
             return event
         flags = Quartz.CGEventGetFlags(event)
-        report(gate.observe(fn_held(flags), time.monotonic()),
+        report(gate.observe(key_held(flags, key), time.monotonic()),
                source="tap", flags=flags)
         return event
 
@@ -349,7 +398,8 @@ def main() -> int:
                  "falling back to the event tap alone")
             report(gate.tick(now), source="tick")
             return
-        report(gate.confirm(fn_held(flags), now), source="poll", flags=flags)
+        report(gate.confirm(key_held(flags, key), now),
+               source="poll", flags=flags)
 
     tap = Quartz.CGEventTapCreate(
         Quartz.kCGSessionEventTap,

@@ -8,8 +8,34 @@ cd "$(dirname "$0")"
 UV="$HOME/.local/bin/uv"
 [ -x "$UV" ] || UV="$(command -v uv || true)"
 [ -n "$UV" ] || { echo "uv not found - install it from https://astral.sh/uv" >&2; exit 1; }
+# Onboarding needs only uv, so it dispatches before the conductor's other
+# preflights: a machine still being set up can onboard before Claude Code
+# or tmux is installed. --onboard re-runs the flow on demand; --onboard-cli
+# is the same flow entirely in the terminal.
+if [ "${1:-}" = "--onboard" ]; then
+  "$UV" run --python-preference only-managed --python 3.13 onboarding.py
+  exit 0
+fi
+if [ "${1:-}" = "--onboard-cli" ]; then
+  "$UV" run --python-preference only-managed --python 3.13 onboarding_cli.py
+  exit 0
+fi
+
 command -v tmux >/dev/null || { echo "tmux not found - install it with: brew install tmux" >&2; exit 1; }
 command -v claude >/dev/null || { echo "Claude Code not found - install it from https://code.claude.com/docs/en/setup" >&2; exit 1; }
+
+# First run: onboarding (permissions, mic check, key picker) opens by itself,
+# then the conductor starts. The key picker writes hotkey.json, so its absence
+# means onboarding has never been completed. The install command is run from
+# a terminal, so the first-run flow stays in it; the window only opens when
+# there is no terminal to draw in.
+if [ ! -f "$HOME/.voice-conductor/hotkey.json" ]; then
+  if [ -t 0 ] && [ -t 1 ]; then
+    "$UV" run --python-preference only-managed --python 3.13 onboarding_cli.py || exit
+  else
+    "$UV" run --python-preference only-managed --python 3.13 onboarding.py || exit
+  fi
+fi
 
 # A stale ANTHROPIC_API_KEY silently overrides the claude.ai login and can
 # hang every Manager/worker session; the stored login is what we want.

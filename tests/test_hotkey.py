@@ -18,11 +18,14 @@ Run with:  python3 -m unittest tests.test_hotkey -v
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from hotkey import (FN_MASK, MAX_HOLD_S, NUMPAD_MASK, POLL_INTERVAL_S,
-                    RELEASE_DEBOUNCE_S, TAP_GAP_MAX_S, TAP_MAX_S,
-                    DoubleTap, FnGate, fn_held)
+from hotkey import (FN_MASK, KEY_LABELS, KEY_MASKS, MAX_HOLD_S,
+                    NUMPAD_MASK, POLL_INTERVAL_S, RELEASE_DEBOUNCE_S,
+                    TAP_GAP_MAX_S, TAP_MAX_S, DoubleTap, FnGate,
+                    chosen_key, fn_held, key_held, save_key)
 
 
 class ReadingTheFlagsTest(unittest.TestCase):
@@ -46,6 +49,41 @@ class ReadingTheFlagsTest(unittest.TestCase):
 
     def test_no_flags_is_nothing(self) -> None:
         self.assertFalse(fn_held(0))
+
+
+class ChoosingTheKeyTest(unittest.TestCase):
+    """The push-to-talk key is whichever modifier the user picked."""
+
+    def test_fn_keeps_the_keypad_rule(self) -> None:
+        self.assertTrue(key_held(FN_MASK, "fn"))
+        self.assertFalse(key_held(FN_MASK | NUMPAD_MASK, "fn"))
+
+    def test_another_modifier_reads_its_own_bit(self) -> None:
+        for name, mask in KEY_MASKS.items():
+            if name == "fn":
+                continue
+            self.assertTrue(key_held(mask, name))
+            self.assertFalse(key_held(0, name))
+
+    def test_the_choice_round_trips_through_the_config(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            path = Path(home) / "hotkey.json"
+            self.assertEqual(chosen_key(path), "fn")   # nothing saved yet
+            save_key("control", path)
+            self.assertEqual(chosen_key(path), "control")
+
+    def test_a_bad_config_falls_back_to_fn(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            path = Path(home) / "hotkey.json"
+            path.write_text('{"key": "caps_lock"}')
+            self.assertEqual(chosen_key(path), "fn")
+            path.write_text("not json")
+            self.assertEqual(chosen_key(path), "fn")
+
+    def test_an_unsupported_key_is_never_saved(self) -> None:
+        with self.assertRaises(ValueError):
+            save_key("caps_lock", "/dev/null")
+
 
 SETTLE = RELEASE_DEBOUNCE_S * 4        # comfortably past the debounce
 

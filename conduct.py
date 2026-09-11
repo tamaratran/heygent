@@ -56,6 +56,7 @@ from pathlib import Path
 
 import boss
 import voice_agent
+from hotkey import KEY_LABELS, chosen_key
 from voice_agent import (HotkeyListener, Ui, VoiceAgent, ask_for_api_key,
                          load_env, log, withhold_api_key)
 
@@ -1308,9 +1309,9 @@ async def main() -> int:
             agent.holding = True
             await session_task
         else:
-            print("hold Fn and talk, release to get an answer, "
-                  "double-tap Fn for notifications, ctrl-c to quit",
-                  flush=True)
+            print(f"hold {KEY_LABELS[chosen_key()]} and talk, "
+                  "release to get an answer, double-tap Fn for "
+                  "notifications, ctrl-c to quit", flush=True)
             await hotkey.wait_with(session_task)
     except (KeyboardInterrupt, asyncio.CancelledError):
         application_log("conductor", "app.interrupted",
