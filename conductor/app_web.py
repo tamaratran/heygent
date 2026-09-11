@@ -325,6 +325,22 @@ PAGE = """<!doctype html>
   .panel .row2.wait { color: var(--green); }
   .panel .row2.fail { color: var(--red); }
   .sess .mark { flex: none; font-size: .5rem; }
+  /* The remove button: only under the pointer, so the list still reads
+     as a glance. */
+  .sess .x { flex: none; display: none; place-items: center;
+    width: 1.1rem; height: 1.1rem; padding: 0; border: 0;
+    border-radius: 4px; background: none; color: var(--muted);
+    font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+  .sess:hover .x { display: grid; }
+  .sess .x:hover { background: var(--faint); color: var(--fg); }
+  .sess.current .x { color: var(--select-fg); }
+  .sess.current .x:hover { background: #ffffff33; }
+  .sess .ask { margin: .4rem 0 .1rem; font-size: 10.5px; line-height: 1.35;
+    white-space: normal; cursor: default; }
+  .sess .ask .btns { display: flex; gap: .35rem; margin-top: .4rem; }
+  .sess .ask button { border: 1px solid var(--line); background: var(--bg);
+    color: var(--fg); font: inherit; font-size: 10.5px;
+    padding: .15rem .55rem; border-radius: 5px; cursor: pointer; }
   .sess .mark.spin { font-size: .85rem; line-height: 1;
     color: var(--clay) !important;
     animation: turn 1.8s linear infinite; }
@@ -1022,15 +1038,67 @@ async function loadSessions() {
     line.appendChild(state);
     line.title = (row.title || row.task_id)
       + (row.status ? " \u00b7 " + row.status : "");
+    const x = document.createElement("button");
+    x.className = "x";
+    x.title = "Remove from the sidebar (the worker is not stopped)";
+    x.textContent = "×";
+    x.onclick = (event) => {
+      event.stopPropagation();
+      removeSession(row.task_id, false);
+    };
+    top.appendChild(x);
+    if (asking && asking.task_id === row.task_id)
+      line.appendChild(removeQuestion(asking));
     line.onclick = () => openTerm(row.task_id, row.title || row.task_id);
     list.appendChild(line);
   }
+  // A worker whose card was removed is still a worker the Boss waits for.
+  live += data.hidden_running || 0;
   const boss = document.getElementById("bossState");
   if (boss) {
     boss.className = "row2" + (live ? " wait" : "");
     boss.textContent = live ? "Waiting for " + live + " worker"
       + (live > 1 ? "s" : "") : "Idle";
   }
+}
+
+// Removing a card takes it off the sidebar and nothing else: the worker,
+// its worktree and its branch stay. A worker that may still be running
+// is asked about first, in its row - the answer says it keeps running -
+// and only a yes removes it. The question lives here, not in the row,
+// because the list is redrawn every two seconds.
+let asking = null;   // { task_id, message }: a removal waiting on a yes
+async function removeSession(taskId, confirmed) {
+  const reply = await post("/remove",
+                           { task_id: taskId, confirmed: confirmed });
+  if (reply && reply.running && !reply.ok) {
+    asking = { task_id: taskId, message: reply.message || "" };
+  } else {
+    asking = null;
+    if (reply && reply.ok && termId === taskId) closeTerm();
+  }
+  loadSessions();
+}
+
+function removeQuestion(ask) {
+  const box = document.createElement("div");
+  box.className = "ask";
+  box.onclick = (event) => event.stopPropagation();
+  const words = document.createElement("div");
+  words.textContent = ask.message;
+  box.appendChild(words);
+  const buttons = document.createElement("div");
+  buttons.className = "btns";
+  const yes = document.createElement("button");
+  yes.textContent = "Remove card";
+  yes.onclick = () => removeSession(ask.task_id, true);
+  const no = document.createElement("button");
+  no.textContent = "Keep";
+  no.onclick = () => { asking = null; loadSessions(); };
+  buttons.appendChild(yes);
+  buttons.appendChild(no);
+  box.appendChild(buttons);
+  return box;
 }
 
 let fleetTimer = null;
@@ -1523,6 +1591,30 @@ def _activity(event) -> dict | None:
 
 
 
+# A sidebar card whose worker is known to be done with: removing it asks
+# nothing. Any other glyph - working, waiting on the user, or a session
+# the host still has open - may be a worker still running.
+SETTLED_GLYPHS = ("done", "failed")
+# What brings a removed card back: a result, a failure, a question.
+NEWS_GLYPHS = ("done", "failed", "attention")
+REMOVED_KEEP = 200
+
+
+def _still_running(row: dict) -> str:
+    """What the user is told before a live worker's card is removed."""
+    title = row.get("title") or row.get("task_id")
+    glyph = row.get("glyph")
+    if glyph == "attention":
+        head = f"{title} is waiting for you."
+    elif glyph == "open":
+        head = f"{title} still has its session open and may be running."
+    else:
+        head = f"{title} is still working."
+    return (head + " Removing the card will not stop it: the worker keeps"
+            " running, and its card comes back when it finishes or needs"
+            " you.")
+
+
 def _first_words(history: list) -> str:
     """A thread's title: the first thing the user said in it, or ""."""
     for item in history:
@@ -1592,6 +1684,12 @@ class CodexWeb:
         # ever named should never fall back to its raw task id.
         self._session_names: dict[str, str] = {}
         self._load_session_names()
+        # task_id -> the glyph and status its card had when the user took
+        # it off the sidebar, kept on disk so a restart does not bring
+        # it back.
+        self._removed: dict[str, dict] = {}
+        self._load_removed()
+        self.hidden_running = 0         # removed cards whose worker is live
         # The live terminal streams behind the page's embedded panes.
         self.terms = TermStreams(self._send_all)
 
@@ -1893,11 +1991,112 @@ class CodexWeb:
                             "title": self._session_names.get(task_id,
                                                              task_id),
                             "status": "Still open", "glyph": "open"})
+        out = self._without_removed(out)
         # What is working sits above what has settled - the sidebar is a
         # glance, and the glance is at the live work.
         out.sort(key=lambda row: row.get("glyph") in ("done", "failed",
                                                       "open"))
         return out
+
+    # -- a card the user took off the sidebar ------------------------------
+    def _removed_file(self) -> Path | None:
+        if self.home is None:
+            return None
+        return Path(self.home) / "boss" / "sidebar_removed.json"
+
+    def _load_removed(self) -> None:
+        file = self._removed_file()
+        if file is None or not file.is_file():
+            return
+        try:
+            removed = json.loads(file.read_text())
+        except (OSError, ValueError):
+            application_log("ui", "app_web.removed_unreadable",
+                            "the removed cards file could not be read",
+                            severity="warning", exc_info=True)
+            return
+        if isinstance(removed, dict):
+            self._removed = {str(k): v for k, v in removed.items()
+                             if isinstance(v, dict)}
+
+    def _save_removed(self) -> None:
+        file = self._removed_file()
+        if file is None:
+            return
+        # Newest kept: a list of ids nobody lists any more must not grow
+        # for ever.
+        if len(self._removed) > REMOVED_KEEP:
+            newest = sorted(self._removed.items(),
+                            key=lambda item: item[1].get("at") or 0)
+            self._removed = dict(newest[-REMOVED_KEEP:])
+        try:
+            file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._removed))
+            tmp.replace(file)
+        except OSError:
+            application_log("ui", "app_web.removed_unwritable",
+                            "the removed cards could not be kept",
+                            severity="warning", exc_info=True)
+
+    def _without_removed(self, rows: list[dict]) -> list[dict]:
+        """The rows, less the cards the user removed - except a card
+        with news since: a worker that finished, failed or asked for the
+        user after its card was taken away is shown again, so removing a
+        card never hides a result or a question."""
+        kept, returned, hidden_running = [], False, 0
+        for row in rows:
+            task_id = row.get("task_id") or ""
+            gone = self._removed.get(task_id)
+            now = (row.get("glyph"), row.get("status"))
+            if gone is not None and now[0] in NEWS_GLYPHS and \
+                    now != (gone.get("glyph"), gone.get("status")):
+                self._removed.pop(task_id, None)
+                returned = True
+                application_log("ui", "app_web.card_returned",
+                                "a removed card came back with news",
+                                severity="info", task_id=task_id,
+                                glyph=now[0])
+                gone = None
+            if gone is None:
+                kept.append(row)
+            elif now[0] not in SETTLED_GLYPHS:
+                hidden_running += 1
+        # Still counted where the page says how many workers the Boss is
+        # waiting for: a removed card is not a stopped worker.
+        self.hidden_running = hidden_running
+        if returned:
+            self._save_removed()
+        return kept
+
+    def remove_session(self, task_id: str, confirmed: bool = False) -> dict:
+        """The user taking a worker's card off the sidebar.
+
+        Only the card goes. Nothing here stops, closes or deletes
+        anything: the worker's session, worktree and branch stay as they
+        are. A worker that may still be running is asked about first,
+        because a card that disappears reads as work that stopped - the
+        answer says the worker keeps going, and the card is removed only
+        once that has been confirmed."""
+        if not _safe_task_id(task_id):
+            return {"ok": False, "error": "no such session"}
+        row = next((r for r in self.sessions()
+                    if r.get("task_id") == task_id), None)
+        if row is None:
+            return {"ok": True, "removed": False}     # not on the sidebar
+        running = row.get("glyph") not in SETTLED_GLYPHS
+        if running and not confirmed:
+            return {"ok": False, "running": True,
+                    "message": _still_running(row)}
+        self._removed[task_id] = {"glyph": row.get("glyph"),
+                                  "status": row.get("status"),
+                                  "at": time.time()}
+        self._save_removed()
+        application_log("ui", "app_web.card_removed",
+                        "the user removed a card from the sidebar",
+                        severity="info", task_id=task_id,
+                        glyph=row.get("glyph"), running=running)
+        return {"ok": True, "removed": True, "running": running}
 
     # -- the conversation --------------------------------------------------
     async def run_turn(self, text: str) -> None:
@@ -2181,7 +2380,16 @@ class CodexWeb:
             elif method == "GET" and path == "/sessions":
                 rows = await asyncio.to_thread(self.sessions)
                 await self._respond(writer, "200 OK", "application/json",
-                                    json.dumps({"rows": rows}))
+                                    json.dumps({"rows": rows,
+                                                "hidden_running":
+                                                    self.hidden_running}))
+            elif method == "POST" and path == "/remove":
+                result = await asyncio.to_thread(
+                    self.remove_session,
+                    str((body or {}).get("task_id") or ""),
+                    bool((body or {}).get("confirmed")))
+                await self._respond(writer, "200 OK", "application/json",
+                                    json.dumps(result))
             elif method == "GET" and path.startswith("/history/"):
                 await self._history(writer, path[len("/history/"):].strip("/"))
             elif method == "GET" and path.startswith("/stream/"):
@@ -3104,7 +3312,12 @@ class WindowBridge:
                 return {"ok": False, "error": str(exc)[:200]}
             return {"ok": True}
         if path == "/sessions":
-            return {"rows": await asyncio.to_thread(web.sessions)}
+            rows = await asyncio.to_thread(web.sessions)
+            return {"rows": rows, "hidden_running": web.hidden_running}
+        if path == "/remove":
+            return await asyncio.to_thread(
+                web.remove_session, str(body.get("task_id") or ""),
+                bool(body.get("confirmed")))
         if path == "/drop":
             # The browser's way in: bytes and a name, no path. The app's
             # own window drops by path and never comes here - but the
