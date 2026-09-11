@@ -1,0 +1,1161 @@
+[
+  {
+    "name": "new2-webhooks",
+    "tasks": [],
+    "user_message": "Handle Stripe webhooks for refunds.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new2-migration",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Separately, migrate us off the legacy queue.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new2-meanwhile",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Meanwhile, get started on onboarding emails.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new2-another",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Another one: audit our npm dependencies.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new2-constraint",
+    "tasks": [],
+    "user_message": "Build an importer, but do not install new dependencies.",
+    "expected": {
+      "action": "create_task",
+      "semantic_requirements": [
+        "dependencies"
+      ]
+    }
+  },
+  {
+    "name": "follow2-search-synonyms",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Search should also handle synonyms.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_search",
+      "semantic_requirements": [
+        "synonyms"
+      ]
+    }
+  },
+  {
+    "name": "follow2-export-excel",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Make the export also support Excel.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_export",
+      "semantic_requirements": [
+        "Excel"
+      ]
+    }
+  },
+  {
+    "name": "follow2-email-plaintext",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The reset email needs a plain-text fallback.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_email",
+      "semantic_requirements": [
+        "plain"
+      ]
+    }
+  },
+  {
+    "name": "follow2-api-429",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "The rate limiter must return 429 with a Retry-After header.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_api",
+      "semantic_requirements": [
+        "429"
+      ]
+    }
+  },
+  {
+    "name": "follow2-ui-copy",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "For the banner, use the copy from the design doc.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_ui",
+      "semantic_requirements": [
+        "copy"
+      ]
+    }
+  },
+  {
+    "name": "follow2-no-breaking",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Whatever the API work does, keep backwards compatibility.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_api",
+      "semantic_requirements": [
+        "backwards"
+      ]
+    }
+  },
+  {
+    "name": "follow2-search-perf",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Don't slow queries down while improving relevance.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_search"
+    }
+  },
+  {
+    "name": "follow2-export-limit",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Cap exports at 10k rows for now.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_export",
+      "semantic_requirements": [
+        "10"
+      ]
+    }
+  },
+  {
+    "name": "follow2-only-tests",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the rate limiting one to start with tests only.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_api",
+      "semantic_requirements": [
+        "tests"
+      ]
+    }
+  },
+  {
+    "name": "follow2-email-staging",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The email fix should be verified on staging first.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_email",
+      "semantic_requirements": [
+        "staging"
+      ]
+    }
+  },
+  {
+    "name": "status2-search",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Where are we on search?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_search"
+    }
+  },
+  {
+    "name": "status2-all",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Give me a rundown of everything.",
+    "expected": {
+      "action": "list_tasks"
+    }
+  },
+  {
+    "name": "status2-email-waiting",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "What does the email one need from me?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_email"
+    }
+  },
+  {
+    "name": "status2-api",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Is the rate limiting done yet?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_api"
+    }
+  },
+  {
+    "name": "status2-anything-stuck",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Anything blocked right now?",
+    "expected": {
+      "action": "list_tasks"
+    }
+  },
+  {
+    "name": "interrupt2-search",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Pause search for now.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_search"
+    }
+  },
+  {
+    "name": "interrupt2-export",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Hold off on the export work.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_export"
+    }
+  },
+  {
+    "name": "interrupt2-api",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the rate limiting work a sec.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_api"
+    }
+  },
+  {
+    "name": "interrupt2-banner",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Freeze the banner task.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_ui"
+    }
+  },
+  {
+    "name": "interrupt2-wait-dont",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Wait - don't let the export one touch prod data.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_export",
+      "semantic_requirements": [
+        "prod"
+      ]
+    }
+  },
+  {
+    "name": "resume2-email",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The email one can continue now.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_email"
+    }
+  },
+  {
+    "name": "resume2-waiting",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Resume the one that's waiting on me.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_email"
+    }
+  },
+  {
+    "name": "resume2-goahead",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      },
+      {
+        "task_id": "task_docs",
+        "title": "API docs",
+        "goal": "Document the API",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Go ahead with the docs task.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_docs"
+    }
+  },
+  {
+    "name": "cancel2-export",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "We're dropping CSV export - cancel it.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_export"
+    }
+  },
+  {
+    "name": "cancel2-banner",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "The banner isn't needed anymore, get rid of that task.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_ui"
+    }
+  },
+  {
+    "name": "cancel2-search",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Throw away the search work entirely.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_search"
+    }
+  },
+  {
+    "name": "cancel2-never-mind",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Never mind the rate limiting project, scrap it.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_api"
+    }
+  },
+  {
+    "name": "ambig2-rate-limit",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause the rate limit one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig2-tell-it",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Tell it to hurry up.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig2-cancel-that",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Cancel that.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig2-two-emails",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_email2",
+        "title": "Welcome email",
+        "goal": "New welcome email",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the email one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig2-inspect-it",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "How's it looking?",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ref2-only-waiting",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Resume the paused one.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_email"
+    }
+  },
+  {
+    "name": "ref2-exporting-one",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The exporting one should stream instead of buffering.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_export",
+      "semantic_requirements": [
+        "stream"
+      ]
+    }
+  },
+  {
+    "name": "ref2-relevance",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The relevance work - ship behind a flag.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_search",
+      "semantic_requirements": [
+        "flag"
+      ]
+    }
+  },
+  {
+    "name": "ref2-public-api",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "The public API thing must log every rejection.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_api",
+      "semantic_requirements": [
+        "log"
+      ]
+    }
+  },
+  {
+    "name": "ref2-not-api",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause the one that isn't about the API itself.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_ui"
+    }
+  },
+  {
+    "name": "ref2-both-question",
+    "tasks": [
+      {
+        "task_id": "task_api",
+        "title": "API rate limiting",
+        "goal": "Add rate limiting to public API",
+        "status": "running"
+      },
+      {
+        "task_id": "task_ui",
+        "title": "Rate limit banner",
+        "goal": "Show a banner when rate limited",
+        "status": "running"
+      }
+    ],
+    "user_message": "Are those two tasks related?",
+    "expected": {
+      "action": "list_tasks"
+    }
+  },
+  {
+    "name": "direct2-joke",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Tell me a joke.",
+    "expected": {
+      "action": "answer_directly"
+    }
+  },
+  {
+    "name": "direct2-bye",
+    "tasks": [
+      {
+        "task_id": "task_search",
+        "title": "Search relevance",
+        "goal": "Improve search result ranking",
+        "status": "running"
+      },
+      {
+        "task_id": "task_export",
+        "title": "CSV export",
+        "goal": "Export reports as CSV",
+        "status": "running"
+      },
+      {
+        "task_id": "task_email",
+        "title": "Password reset email",
+        "goal": "Fix broken password reset emails",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "That's everything, thanks!",
+    "expected": {
+      "action": "answer_directly"
+    }
+  }
+]

@@ -1,0 +1,259 @@
+[
+  {
+    "name": "adv-double-negative",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Don't stop the one I told you to stop before - let it keep going.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "adv-except-done",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh tokens",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry webhooks",
+        "status": "completed"
+      }
+    ],
+    "user_message": "Stop everything except the one that's already done.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "adv-actually-keep-running",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Actually don't do that - but keep the settings task running.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "adv-no-merge-but-finish",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Don't merge anything on the login fix. Finish the implementation first.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login",
+      "semantic_requirements": [
+        "merge"
+      ]
+    }
+  },
+  {
+    "name": "adv-whichever-settings",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Have whichever one was touching settings also look at tablets.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_settings",
+      "semantic_requirements": [
+        "tablet"
+      ]
+    }
+  },
+  {
+    "name": "adv-start-vs-stop",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Start the login task again.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "adv-dont-delete",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Whatever you do, don't cancel the login work.",
+    "expected": {
+      "action": "answer_directly"
+    }
+  },
+  {
+    "name": "adv-negated-constraint",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "The settings one shouldn't not use the design system - it must use it.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_settings",
+      "semantic_requirements": [
+        "design system"
+      ]
+    }
+  },
+  {
+    "name": "adv-two-actions",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause settings and tell login to add tests.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "adv-past-reference",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh tokens",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry webhooks",
+        "status": "completed"
+      }
+    ],
+    "user_message": "That thing billing was doing - is it finished?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_billing"
+    }
+  },
+  {
+    "name": "adv-kill-vs-pause",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Responsive settings",
+        "status": "running"
+      }
+    ],
+    "user_message": "Kill the settings one... no wait, just pause it.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "adv-empty-stop",
+    "tasks": [],
+    "user_message": "Stop everything!",
+    "expected": {
+      "action": "answer_directly"
+    }
+  }
+]

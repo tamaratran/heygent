@@ -1,0 +1,1180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Waveform options</title>
+<!--
+  Prototype for choosing the capsule's animation. Nothing here is wired into
+  the app. The capsule geometry and colours are copied from overlay.py and
+  boss.py (PILL_HEIGHT 30, 10 bars of 2pt with 2pt gaps, 17.5pt padding, body
+  rgb(11,12,16), listening rgb(242,244,247), speaking rgb(139,124,246), text
+  mode W_TEXT 452, CaptionView 340 wide at 13.5pt). Levels use the same dBFS
+  mapping as voice_agent.level_from_pcm (-58 dBFS -> 0, -17 dBFS -> 1),
+  sampled every 20 ms like the real mic block.
+-->
+<style>
+  :root {
+    --bg: #ffffff; --fg: #0d0d0d; --muted: #6f6f6f; --faint: #f4f4f4;
+    --line: #e6e6e6; --select: #0a60ff; --select-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1e; --fg: #ececec; --muted: #9a9a9a; --faint: #2a2a2a;
+      --line: #383838; --select: #2f6fed; --select-fg: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text",
+          "Helvetica Neue", sans-serif;
+    padding-block: 28px 56px; padding-inline: 28px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 18px; max-width: 76ch; }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center;
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--faint); margin-bottom: 18px;
+    position: sticky; top: 8px; z-index: 2;
+  }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .group > .k { color: var(--muted); font-size: 12.5px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px;
+         overflow: hidden; background: var(--bg); }
+  .seg button, .btn {
+    font: inherit; font-size: 13px; color: var(--fg); background: transparent;
+    border: 0; padding: 4px 11px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--select); color: var(--select-fg); }
+  .btn { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .meters { display: flex; gap: 14px; align-items: center; margin-left: auto; }
+  .meter { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .meter canvas { width: 120px; height: 22px; border-radius: 5px; background: var(--bg);
+                  border: 1px solid var(--line); display: block; }
+  .mic-note { font-size: 12.5px; color: var(--muted); }
+  .mic-note.err { color: #d9534f; }
+
+  .scroller { overflow-x: auto; }
+  .grid {
+    display: grid; min-width: 760px;
+    grid-template-columns: minmax(210px, 270px) repeat(4, minmax(118px, 1fr));
+    gap: 10px;
+  }
+  .section { grid-column: 1 / -1; padding: 22px 0 2px; }
+  .section h2 { font-size: 16px; font-weight: 600; margin: 0; }
+  .section p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; max-width: 90ch; }
+  .colhead { font-size: 12px; color: var(--muted); padding: 0 2px 2px; align-self: end; }
+  .colhead b { display: block; color: var(--fg); font-weight: 600; font-size: 13px; }
+  .label { padding: 8px 4px 8px 0; border-top: 1px solid var(--line); }
+  .name { font-weight: 600; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+  .letter {
+    display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
+    background: var(--fg); color: var(--bg); font-size: 12.5px; font-weight: 700;
+  }
+  .tag { font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--line);
+         border-radius: 999px; padding: 0 7px; }
+  .desc { margin: 4px 0 6px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+  .cost { font-size: 12px; line-height: 1.4; }
+  .cost b { font-weight: 600; }
+
+  .cell {
+    border-radius: 12px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 10px 6px 7px; gap: 2px; min-height: 100%;
+    background: linear-gradient(160deg, #3a3f49, #1b1d22);
+  }
+  .cell.wide { grid-column: span 2; }
+  body.light-desk .cell { background: linear-gradient(160deg, #e9ecf1, #bfc6d0); }
+  .cell canvas { display: block; }
+  .cap { font-size: 11px; color: rgba(255,255,255,.55); letter-spacing: .01em; }
+  body.light-desk .cap { color: rgba(0,0,0,.55); }
+
+  .notes { margin-top: 26px; max-width: 82ch; border-top: 1px solid var(--line); padding-top: 14px; }
+  .notes h2 { font-size: 15px; margin: 0 0 6px; }
+  .notes ol { margin: 0; padding-left: 20px; color: var(--muted); }
+  .notes li { margin: 4px 0; }
+  .notes code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); }
+
+  @media (max-width: 720px) {
+    body { padding-inline: 16px; }
+    .meters { margin-left: 0; }
+    .toolbar { position: static; }
+  }
+</style>
+</head>
+<body>
+<h1>Waveform options</h1>
+<p class="lede">Animations for the voice capsule, drawn at its real size and colours. Every row
+gets the same voice. A–J only move with the voice level. K–O also show the words.</p>
+
+<div class="toolbar">
+  <div class="group"><span class="k">Voice</span>
+    <div class="seg" id="source">
+      <button data-v="sim" aria-pressed="true">Simulated</button>
+      <button data-v="mic" aria-pressed="false">Microphone</button>
+    </div>
+    <span class="mic-note" id="micNote"></span>
+  </div>
+  <div class="group"><span class="k">Size</span>
+    <div class="seg" id="zoom">
+      <button data-v="1" aria-pressed="false">Actual</button>
+      <button data-v="2" aria-pressed="true">2×</button>
+      <button data-v="3" aria-pressed="false">3×</button>
+    </div>
+  </div>
+  <div class="group"><span class="k">Desktop</span>
+    <div class="seg" id="desk">
+      <button data-v="dark" aria-pressed="true">Dark</button>
+      <button data-v="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+  <button class="btn" id="pause">Pause</button>
+  <div class="meters">
+    <div class="meter">you <canvas id="mUser"></canvas></div>
+    <div class="meter">agent <canvas id="mAgent"></canvas></div>
+  </div>
+</div>
+
+<div class="scroller"><div class="grid" id="grid"></div></div>
+
+<div class="notes">
+  <h2>What wiring any option in involves</h2>
+  <ol>
+    <li><b>Drawing.</b> Replace the listening branch of <code>PillView.drawRect_</code>
+      in <code>overlay.py</code>. It already redraws at 60 fps, and every shape here
+      has a direct <code>NSBezierPath</code> equivalent.</li>
+    <li><b>Speaking.</b> Today the capsule hides while the agent talks. Showing it means having
+      <code>_pump_ui</code> in <code>voice_agent.py</code> send <code>state="speaking"</code> with
+      <code>level=self.speaker.level</code>. The speaker already measures that level, but nothing sends it. About 10 lines plus a test.</li>
+    <li><b>Idle.</b> Today the capsule disappears 1.2 s after you let go of Fn. A resting capsule means
+      it stays on screen all the time. That's a one-line change, but a real product decision.</li>
+    <li><b>Words.</b> Your words already reach <code>voice_agent.py</code> while you talk
+      (<code>input_transcript.added</code>). The white caption card (K) is built but switched off by
+      <code>boss.SHOW_CAPTION = False</code>. The capsule's own text mode (452pt wide, the base for L–O) is
+      built too, but nothing sends it text. The agent's reply arrives as a text stream
+      (<code>turn.delta</code>) that isn't timed to its audio. So showing the agent's words in step with its
+      voice, as this page does, needs an estimate of how far playback has got.</li>
+    <li><b>More than a level.</b> Oscilloscope (H) and Spectrum (I) need a richer signal than the one
+      number the overlay gets now: raw samples or frequency bands for every 20 ms block.</li>
+  </ol>
+</div>
+
+<script>
+"use strict";
+// ---- geometry and colours, from overlay.py / boss.py -----------------------
+const W = 73, H = 30, CY = H / 2, CX = W / 2;   // compact capsule, points
+const M = 16;                                     // room for the window shadow
+const WIDE = 452;                                 // W_TEXT: the capsule with words
+const TEXT_PAD = 17.5, TEXT_X = 17.5 + 34 + 12;   // 9 bars, a gap, then words
+const CAPTION = { w: 340, pad: 12, line: 19, lines: 2, gap: 9, radius: 21 };
+const FAMILY = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+const FONT = `500 12.5px ${FAMILY}`;              // PillView caption
+const CAPTION_FONT = `400 13.5px ${FAMILY}`;      // CaptionView
+const RGB = {
+  listen: [242, 244, 247], speak: [139, 124, 246], speakLight: [217, 210, 255],
+  heard: [154, 163, 178], idle: [75, 81, 92],
+};
+const STEP = 1 / 60, SAMPLE = 0.02;               // 60 fps timer, 20 ms mic blocks
+const LAG = 0.3;                                  // your transcript lands just after the word
+const LINGER = 1.2;                               // the capsule stays up after release
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+function blend(w, idle, listening, speaking) {
+  const s = w.idle + w.listening + w.speaking || 1;
+  return [0, 1, 2].map(k =>
+    (idle[k] * w.idle + listening[k] * w.listening + speaking[k] * w.speaking) / s);
+}
+
+// ---- simulated speech -------------------------------------------------------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function syllables(word) {
+  const w = word.toLowerCase().replace(/[^a-z]/g, "");
+  const groups = (w.match(/[aeiouy]+/g) || []).length;
+  return Math.max(1, groups - (groups > 1 && /[^l]e$/.test(w) ? 1 : 0));
+}
+const USER_LINES = [
+  "Can you open the pull request for the overlay?",
+  "Run the voice tests and tell me what failed.",
+  "Show me some other styles for the waveform.",
+  "Make the speaking colour a little softer.",
+];
+const AGENT_LINES = [
+  "Sure, I'm opening the pull request now.",
+  "Two tests failed, both in the overlay suite.",
+  "I put the new styles at the bottom of the page.",
+  "Want me to fix those tests while you look?",
+];
+
+// One speaker. Simulated, it plans a sentence as syllables (fast attack, slower
+// decay) and plays them back as a level, stamping each word with the moment it
+// starts. On the microphone the level is real and the words are sample text,
+// one per syllable onset: this page does no speech recognition.
+function makeSpeech(seed, lines, o) {
+  const rnd = mulberry32(seed);
+  const phrases = [];
+  let now = 0, next = 0.5, cur = null, idx = 0, syls = [];
+  let trough = 0, lastWord = -1, quiet = 0;
+  function open() {
+    const text = lines[idx++ % lines.length];
+    cur = { text, start: now, end: null, said: 0,
+            words: text.split(" ").map(t => ({ text: t, t: Infinity, amp: 0.6 })) };
+    phrases.push(cur);
+    if (phrases.length > 3) phrases.shift();
+  }
+  function plan() {
+    open();
+    let at = now;
+    for (const word of cur.words) {
+      word.t = at; word.amp = 0;
+      for (let k = 0, n = syllables(word.text); k < n; k++) {
+        const d = o.syl[0] + rnd() * (o.syl[1] - o.syl[0]);
+        const a = (o.amp[0] + rnd() * (o.amp[1] - o.amp[0])) * (k ? 0.85 : 1);
+        syls.push({ s: at, d, a });
+        word.amp = Math.max(word.amp, a);
+        at += d * 0.85 + 0.01 + rnd() * 0.04;
+      }
+      at += /[,.?!]$/.test(word.text) ? 0.2 + rnd() * 0.12 : 0.04 + rnd() * 0.08;
+    }
+    cur.plannedEnd = at;
+  }
+  return {
+    get now() { return now; },
+    step(dt) {
+      now += dt;
+      if (!cur && now >= next) plan();
+      if (cur && now >= cur.plannedEnd) {
+        cur.end = now; cur = null;
+        next = now + o.pause[0] + rnd() * (o.pause[1] - o.pause[0]);
+      }
+      syls = syls.filter(x => now < x.s + x.d);
+      let v = 0;
+      for (const x of syls) {
+        if (now < x.s) continue;
+        const u = (now - x.s) / x.d;
+        const e = u < 0.22 ? u / 0.22 : Math.pow(1 - (u - 0.22) / 0.78, 1.6);
+        v = Math.max(v, x.a * e);
+      }
+      v *= 0.9 + 0.1 * Math.sin(now * 2 * Math.PI * 6.5);
+      if (v > 0) v += (rnd() - 0.5) * 0.05;
+      return clamp(v);
+    },
+    listen(level, dt) {
+      now += dt;
+      trough = Math.min(trough + (level - trough) * 0.05, level);
+      if (level - trough > 0.2 && now - lastWord > 0.22) {
+        if (!cur) open();
+        const word = cur.words[cur.said];
+        if (word) { word.t = now; word.amp = level; cur.said += 1; }
+        lastWord = now; trough = level;
+      }
+      quiet = level < 0.08 ? quiet + dt : 0;
+      if (cur && quiet > 0.9) { cur.end = now; cur = null; }
+      return level;
+    },
+    interrupt() {
+      if (cur) cur.end = now;
+      cur = null; syls = []; next = now + 0.6; trough = 0; quiet = 0;
+    },
+    // The sentence on show: still open, or finished less than `linger` ago.
+    showing(linger) {
+      const p = phrases[phrases.length - 1];
+      return p && (p.end === null || now < p.end + linger) ? p : null;
+    },
+  };
+}
+const speech = {
+  user: makeSpeech(7, USER_LINES, { syl: [0.12, 0.24], amp: [0.45, 0.95], pause: [1.2, 2.0] }),
+  agent: makeSpeech(23, AGENT_LINES, { syl: [0.1, 0.18], amp: [0.6, 0.85], pause: [0.9, 1.5] }),
+};
+// The words a cell can show now: yours a moment after you say them, the agent's
+// as it says them.
+function wordsFor(cell) {
+  const who = cell.state === "speaking" ? speech.agent : speech.user;
+  const lag = who === speech.user ? LAG : 0;
+  const phrase = who.showing(LINGER + lag);
+  if (!phrase) return null;
+  const now = who.now - lag;
+  return { phrase, now, words: phrase.words.filter(w => w.t <= now) };
+}
+
+// ---- microphone (only when the toggle is switched on) ----------------------
+const mic = { on: false, stream: null, ctx: null, an: null, buf: null, freq: null };
+async function startMic() {
+  const note = document.getElementById("micNote");
+  note.className = "mic-note"; note.textContent = "asking…";
+  try {
+    mic.stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    mic.ctx = new AudioContext();
+    mic.an = mic.ctx.createAnalyser();
+    mic.an.fftSize = 1024;                      // ~21 ms at 48 kHz, like a block
+    mic.ctx.createMediaStreamSource(mic.stream).connect(mic.an);  // never to the speakers
+    mic.buf = new Float32Array(mic.an.fftSize);
+    mic.freq = new Float32Array(mic.an.frequencyBinCount);
+    speech.user.interrupt();
+    mic.on = true;
+    note.textContent = "live · words are sample text paced by your syllables · agent stays simulated";
+    return true;
+  } catch (e) {
+    note.className = "mic-note err";
+    note.textContent = "microphone unavailable: " + (e.message || e.name);
+    return false;
+  }
+}
+function stopMic() {
+  if (mic.stream) mic.stream.getTracks().forEach(t => t.stop());
+  if (mic.ctx) mic.ctx.close();
+  if (mic.on) speech.user.interrupt();
+  Object.assign(mic, { on: false, stream: null, ctx: null, an: null, buf: null, freq: null });
+  document.getElementById("micNote").textContent = "";
+}
+function micLevel() {
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let s = 0;
+  for (const v of mic.buf) s += v * v;
+  const rms = Math.sqrt(s / mic.buf.length);
+  if (rms <= 1e-7) return 0;
+  return clamp((20 * Math.log10(rms) + 58) / 41);   // level_from_pcm
+}
+function micBands() {
+  mic.an.getFloatFrequencyData(mic.freq);
+  const nyquist = mic.ctx.sampleRate / 2, n = mic.freq.length, out = [];
+  for (let b = 0; b < 8; b++) {
+    const lo = 120 * Math.pow(50, b / 8), hi = 120 * Math.pow(50, (b + 1) / 8);
+    const i0 = Math.floor(lo / nyquist * n), i1 = Math.max(i0 + 1, Math.ceil(hi / nyquist * n));
+    let s = 0;
+    for (let i = i0; i < i1; i++) s += mic.freq[i];
+    out.push(clamp((s / (i1 - i0) + 95) / 60));
+  }
+  return out;
+}
+
+// ---- shared drawing ---------------------------------------------------------
+let lightDesk = false;
+// The body, border and window shadow are drawn once per scale and stamped in
+// three slices. Blurring ~50 shadows every frame stalled the page.
+const SPRITE_W = 120, SLICE = M + H / 2 + 14;     // caps carry the blur's reach
+const sprites = new Map();
+function pillSprite(scale) {
+  let sprite = sprites.get(scale);
+  if (sprite) return sprite;
+  sprite = document.createElement("canvas");
+  sprite.width = Math.ceil((SPRITE_W + 2 * M) * scale);
+  sprite.height = Math.ceil((H + 2 * M) * scale);
+  const g = sprite.getContext("2d");
+  g.setTransform(scale, 0, 0, scale, M * scale, M * scale);
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.38)"; g.shadowBlur = 14 * scale; g.shadowOffsetY = 4 * scale;
+  g.beginPath(); g.roundRect(0, 0, SPRITE_W, H, H / 2);
+  g.fillStyle = "rgba(11,12,16,0.98)"; g.fill();
+  g.restore();
+  g.beginPath(); g.roundRect(0.5, 0.5, SPRITE_W - 1, H - 1, (H - 1) / 2);
+  g.strokeStyle = "rgba(255,255,255,0.14)"; g.lineWidth = 1; g.stroke();
+  sprites.set(scale, sprite);
+  return sprite;
+}
+function pill(ctx, x, w, clip = true) {
+  const scale = ctx.getTransform().a, sprite = pillSprite(scale);
+  const sw = sprite.width, sh = sprite.height, slice = SLICE * scale, h = H + 2 * M;
+  const left = x - M, middle = w + 2 * M - 2 * SLICE;
+  ctx.drawImage(sprite, 0, 0, slice, sh, left, -M, SLICE, h);
+  ctx.drawImage(sprite, sw / 2, 0, 1, sh, left + SLICE, -M, middle, h);
+  ctx.drawImage(sprite, sw - slice, 0, slice, sh, left + SLICE + middle, -M, SLICE, h);
+  if (clip) { ctx.beginPath(); ctx.roundRect(x + 1, 1, w - 2, H - 2, (H - 2) / 2); ctx.clip(); }
+}
+const capsule = (ctx, clip = true) => pill(ctx, 0, W, clip);
+function ghost(ctx) {
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.roundRect(0.5, 0.5, W - 1, H - 1, (H - 1) / 2);
+  ctx.strokeStyle = lightDesk ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+}
+
+const measurer = document.createElement("canvas").getContext("2d");
+const widths = new Map();
+function textWidth(text, font) {
+  const key = font + "|" + text;
+  let w = widths.get(key);
+  if (w === undefined) { measurer.font = font; w = measurer.measureText(text).width; widths.set(key, w); }
+  return w;
+}
+function layout(words, fontOf) {
+  const space = textWidth(" ", FONT), items = [];
+  let x = 0;
+  for (const w of words) {
+    const font = fontOf(w), ww = textWidth(w.text, font);
+    items.push({ w, x, ww, font });
+    x += ww + space;
+  }
+  return { items, width: items.length ? x - space : 0 };
+}
+// The capsule hugs its words up to W_TEXT, then the words scroll left.
+function hug(m, contentW, padL, padR, scrollTarget) {
+  const target = contentW > 0 ? Math.min(WIDE, padL + contentW + padR) : W;
+  m.w += (target - m.w) * 0.22;                     // WIDTH_EASE
+  const room = WIDE - padL - padR;
+  const want = scrollTarget ?? contentW - room;
+  m.scroll = contentW > 0
+    ? m.scroll + (clamp(want, 0, Math.max(0, contentW - room)) - m.scroll) * 0.18 : 0;
+}
+// Words that fade in as they land and fade out as they scroll off the left.
+function wordRun(ctx, run, o) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(o.left - 8, 0, Math.max(0, o.right - o.left + 8), H); ctx.clip();
+  ctx.textBaseline = "middle";
+  for (const it of run.items) {
+    const x = o.left + it.x - o.scroll;
+    const landed = o.landed === false ? 1 : clamp((o.now - it.w.t) / 0.18);
+    const edge = o.scroll > 0.5 ? clamp((x + it.ww - o.left) / 26) : 1;
+    const a = o.alpha(it) * landed * edge;
+    if (a <= 0.01) continue;
+    ctx.font = it.font;
+    ctx.fillStyle = rgba(o.colour, a);
+    ctx.fillText(it.w.text, x + (1 - landed) * 5, o.y ?? CY + 0.5);
+  }
+  ctx.restore();
+}
+
+// Today's scrolling bars, as a model other options can reuse.
+const Bars = {
+  init(m) {
+    m.wave = Array(10).fill(0.05); m.render = Array(10).fill(0.05);
+    m.accum = 0; m.samples = 0; m.peak = 0; m.frame = 0;
+  },
+  sample(m, level) { m.accum += level; m.samples += 1; m.peak = Math.max(m.peak, level); },
+  step(m) {
+    for (let i = 0; i < 10; i++) m.render[i] += (m.wave[i] - m.render[i]) * 0.30;   // BAR_EASE
+    m.frame += 1;
+    if (m.frame % 4) return;                                                         // WAVE_EVERY
+    const mean = m.samples ? m.accum / m.samples : 0;
+    m.wave.shift(); m.wave.push(Math.max(0.05, 0.72 * mean + 0.28 * m.peak));
+    m.accum = 0; m.samples = 0; m.peak = 0;
+  },
+  draw(ctx, m, start, slots, col) {
+    const raw = m.render.slice(-slots);
+    ctx.fillStyle = rgba(col, 0.95);
+    for (let i = 0; i < slots; i++) {
+      const h = (raw[Math.max(i - 1, 0)] + 2 * raw[i] + raw[Math.min(i + 1, slots - 1)]) / 4;
+      const bh = Math.max(4, h * H * 0.40);
+      ctx.beginPath(); ctx.roundRect(start + i * 4, CY - bh / 2, 2, bh, 1); ctx.fill();
+    }
+  },
+};
+// A faithful port of Controller._drain / _advance_wave / PillView.drawRect_:
+// only while Fn is held, lingering 1.2 s, hidden otherwise.
+const TODAY = {
+  init(m) { Bars.init(m); m.state = "hidden"; m.lastActive = -1e9; },
+  sample(m, level, s) {
+    if (s !== "listening") return;              // the pump only sends while held
+    if (m.state !== "listening") { m.state = "listening"; m.wave = Array(10).fill(0.05); }
+    Bars.sample(m, level);
+    m.lastActive = simTime;
+  },
+  step(m) {
+    if (m.state !== "hidden" && simTime - m.lastActive > LINGER) {
+      m.state = "hidden"; m.wave = Array(10).fill(0.05);
+    }
+    if (m.state !== "hidden") Bars.step(m);     // tick_ returns before advancing
+  },
+  draw(ctx, m) {
+    if (m.state === "hidden") return ghost(ctx);
+    capsule(ctx);
+    Bars.draw(ctx, m, (W - 38) / 2, 10, RGB.listen);
+  },
+};
+
+// ---- the options --------------------------------------------------------------
+// Each: init(mem), sample(mem, level, state, cell) at 50 Hz, step(mem, cell) at
+// 60 Hz, draw(ctx, mem, cell). cell.lv is a shared attack/release follower,
+// cell.w the eased state weights, cell.t the cell's clock.
+const OPTIONS = [
+  {
+    ...TODAY, letter: "A", name: "Current", tag: "today",
+    desc: "Ten 2pt bars scroll right to left, showing about 0.7 s of your mic level. It only appears while Fn is held.",
+    cost: "<b>Wire-in:</b> nothing, this is what ships.",
+    caps: { idle: "hidden today", listening: "your mic", speaking: "hidden today" },
+  },
+  {
+    letter: "B", name: "Mirrored bars",
+    desc: "Nine bars react to the level right now, tallest in the middle and mirrored left to right. When idle they breathe outward from the centre.",
+    cost: "<b>Wire-in: low.</b> Reuses the bar loop and swaps the scrolling history for a centre profile. About 25 lines.",
+    caps: { idle: "breathing", listening: "your mic", speaking: "agent voice" },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const N = 9, BW = 2.5, GAP = 3, span = N * BW + (N - 1) * GAP, start = (W - span) / 2;
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak), mid = (N - 1) / 2;
+      ctx.fillStyle = rgba(col, 0.95);
+      for (let i = 0; i < N; i++) {
+        const d = Math.abs(i - mid);
+        const profile = 0.3 + 0.7 * Math.exp(-((d / 2.6) ** 2));
+        const wobble = 0.72 + 0.28 * Math.sin(c.t * (7 + d * 1.7) + d * 1.3);
+        const breath = 0.5 + 0.5 * Math.sin(c.t * 2.2 - d * 0.8);
+        const bh = 3 + 15 * c.lv * profile * wobble + 1.8 * breath * c.w.idle;
+        ctx.beginPath();
+        ctx.roundRect(start + i * (BW + GAP), CY - bh / 2, BW, bh, BW / 2); ctx.fill();
+      }
+    },
+  },
+  {
+    letter: "C", name: "Ribbon",
+    desc: "One smooth line that swells and speeds up with the voice, with a faint mirrored band behind it. When idle it lies flat with a slow ripple.",
+    cost: "<b>Wire-in: low.</b> One NSBezierPath line plus a faint fill, and a phase counter (the timer already keeps one). About 35 lines.",
+    caps: { idle: "slow ripple", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.phase = 0; m.amp = 1; },
+    step(m, c) {
+      m.amp += (0.9 + c.lv * 10 - m.amp) * 0.2;
+      m.phase += (1.8 + 7 * c.lv) * STEP;
+    },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak);
+      const x0 = 11, x1 = W - 11, n = 48, pts = [];
+      for (let i = 0; i <= n; i++) {
+        const u = i / n, env = Math.pow(Math.sin(Math.PI * u), 1.4);
+        const y = env * m.amp * (0.72 * Math.sin(u * Math.PI * 3.2 - m.phase)
+                               + 0.28 * Math.sin(u * Math.PI * 6.2 + m.phase * 1.37));
+        pts.push([x0 + (x1 - x0) * u, y]);
+      }
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => i ? ctx.lineTo(x, CY - y) : ctx.moveTo(x, CY - y));
+      for (let i = n; i >= 0; i--) ctx.lineTo(pts[i][0], CY + pts[i][1] * 0.55);
+      ctx.fillStyle = rgba(col, 0.14); ctx.fill();
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => i ? ctx.lineTo(x, CY + y * 0.55) : ctx.moveTo(x, CY + y * 0.55));
+      ctx.strokeStyle = rgba(col, 0.38); ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => i ? ctx.lineTo(x, CY - y) : ctx.moveTo(x, CY - y));
+      ctx.strokeStyle = rgba(col, 0.95); ctx.lineWidth = 1.7; ctx.stroke();
+    },
+  },
+  {
+    letter: "D", name: "Orb",
+    desc: "A single dot that grows with loudness and sends out a ring on each syllable. When idle it's a small, dim, breathing dot.",
+    cost: "<b>Wire-in: low to medium.</b> The dot and glow are about 20 lines. The rings need a short list on the view and a syllable detector, about 40 lines in total.",
+    caps: { idle: "breathing dot", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.rings = []; m.trough = 0; m.lastRing = -1; },
+    step(m, c) {
+      m.trough = Math.min(m.trough + (c.lv - m.trough) * 0.02, c.lv);
+      if (c.lv - m.trough > 0.22 && c.t - m.lastRing > 0.2 && c.w.idle < 0.5) {
+        m.rings.push({ r: 3 + c.lv * 5, a: 0.45 + 0.4 * c.lv });
+        m.lastRing = c.t; m.trough = c.lv;
+      }
+      for (const r of m.rings) { r.r += 0.55; r.a *= 0.955; }
+      m.rings = m.rings.filter(r => r.a > 0.02 && r.r < 42);
+    },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak);
+      const breath = 0.5 + 0.5 * Math.sin(c.t * 2.4);
+      const r = 2.6 + c.lv * 6 + c.w.idle * 0.7 * breath;
+      ctx.lineWidth = 1.2;
+      for (const ring of m.rings) {
+        ctx.beginPath(); ctx.arc(CX, CY, ring.r, 0, Math.PI * 2);
+        ctx.strokeStyle = rgba(col, ring.a); ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(CX, CY, r * 0.5, CX, CY, r * 2.6);
+      g.addColorStop(0, rgba(col, 0.3 * (0.25 + c.lv)));
+      g.addColorStop(1, rgba(col, 0));
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.beginPath(); ctx.arc(CX, CY, r, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(col, 0.6 + 0.35 * (1 - c.w.idle) + 0.2 * c.w.idle * breath);
+      ctx.fill();
+    },
+  },
+  {
+    letter: "E", name: "Bouncing dots",
+    desc: "Five dots on springs jump with the voice, from the middle outward, and overshoot a little. When idle they sit still in a row.",
+    cost: "<b>Wire-in: low to medium.</b> Five ovals, but each needs spring state (position and velocity) and a short level history. About 35 lines.",
+    caps: { idle: "resting", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.y = Array(5).fill(0); m.v = Array(5).fill(0); m.hist = []; },
+    step(m, c) {
+      m.hist.unshift(c.lv); if (m.hist.length > 12) m.hist.pop();
+      const sens = [0.75, 0.9, 1, 0.9, 0.75];
+      for (let i = 0; i < 5; i++) {
+        const lagged = m.hist[Math.min(Math.abs(i - 2) * 4, m.hist.length - 1)];
+        const target = lagged * sens[i] * 9;
+        m.v[i] += (target - m.y[i]) * 0.28 - m.v[i] * 0.22;
+        m.y[i] = Math.max(-1.5, m.y[i] + m.v[i]);
+      }
+    },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak);
+      for (let i = 0; i < 5; i++) {
+        const x = CX + (i - 2) * 9, y = CY + 2 - m.y[i];
+        const r = 2.2 + Math.max(0, m.y[i]) * 0.07;
+        const a = 0.95 - c.w.idle * (0.3 - 0.12 * Math.sin(c.t * 1.8 + i * 0.9));
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = rgba(col, a); ctx.fill();
+      }
+    },
+  },
+  {
+    letter: "F", name: "Layered wave",
+    desc: "Siri-style: three soft, overlapping waves drift across a hairline and brighten where they overlap. When idle, only the hairline and a faint shimmer remain.",
+    cost: "<b>Wire-in: medium.</b> Three filled paths with additive blending (NSCompositingOperationPlusLighter). About 60 lines, and the most tuning, but still cheap to draw at this size.",
+    caps: { idle: "hairline", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.amp = 0.8; m.phase = 0; },
+    step(m, c) {
+      m.amp += (0.8 + c.lv * 11 - m.amp) * 0.2;
+      m.phase += (2 + 6 * c.lv) * STEP;
+    },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const layers = [
+        blend(c.w, RGB.idle, RGB.listen, RGB.speak),
+        blend(c.w, RGB.idle, RGB.heard, RGB.speakLight),
+        blend(c.w, RGB.idle, [178, 196, 235], [106, 142, 255]),
+      ];
+      const drift = [0.9, 1.3, 0.7], off = [0, 2.1, 4.2], sigma = [11, 8, 14],
+            k = [0.42, 0.55, 0.33], rate = [3.1, 2.3, 4.0];
+      ctx.globalCompositeOperation = "lighter";
+      for (let j = 0; j < 3; j++) {
+        const cj = CX + Math.sin(c.t * drift[j] + off[j]) * 12 * (0.4 + c.lv);
+        const aj = m.amp * (0.55 + 0.45 * Math.abs(Math.sin(c.t * rate[j] * 0.5 + off[j])));
+        const xs = [];
+        for (let x = 8; x <= W - 8; x += 1.5) xs.push(x);
+        const a = x => aj * Math.exp(-(((x - cj) / sigma[j]) ** 2))
+                         * (0.75 + 0.25 * Math.cos(k[j] * (x - cj) - m.phase));
+        ctx.beginPath();
+        xs.forEach((x, i) => i ? ctx.lineTo(x, CY - a(x)) : ctx.moveTo(x, CY - a(x)));
+        for (let i = xs.length - 1; i >= 0; i--) ctx.lineTo(xs[i], CY + a(xs[i]));
+        ctx.closePath();
+        ctx.fillStyle = rgba(layers[j], 0.55); ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+      const line = ctx.createLinearGradient(8, 0, W - 8, 0);
+      line.addColorStop(0, rgba(layers[0], 0));
+      line.addColorStop(0.5, rgba(layers[0], 0.45));
+      line.addColorStop(1, rgba(layers[0], 0));
+      ctx.fillStyle = line; ctx.fillRect(8, CY - 0.4, W - 16, 0.8);
+    },
+  },
+];
+
+const MORE = [
+  {
+    letter: "G", name: "Rim glow",
+    desc: "Nothing inside the capsule. Its outline lights up with your voice, and while the agent talks a purple light travels round the rim.",
+    cost: "<b>Wire-in: low.</b> Stroke the rim with the level. The travelling light needs a gradient along the outline (a conic CAGradientLayer), about 30 lines.",
+    caps: { idle: "faint rim", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.angle = 0; },
+    step(m, c) { m.angle += (0.8 + 4 * c.lv) * STEP; },
+    draw(ctx, m, c) {
+      capsule(ctx, false);
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak);
+      const strength = clamp(c.lv + c.w.idle * 0.12 * (0.5 + 0.5 * Math.sin(c.t * 2)));
+      const rim = () => { ctx.beginPath(); ctx.roundRect(0.75, 0.75, W - 1.5, H - 1.5, (H - 1.5) / 2); };
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = rgba(col, 0.9 * strength); ctx.shadowBlur = 3 + 9 * strength;
+      ctx.globalAlpha = 1 - c.w.speaking;
+      rim(); ctx.strokeStyle = rgba(col, 0.2 + 0.8 * strength); ctx.stroke();
+      if (c.w.speaking > 0.01) {
+        const g = ctx.createConicGradient(m.angle, CX, CY);
+        const hi = rgba(col, 0.45 + 0.55 * strength), lo = rgba(col, 0.1 + 0.35 * strength);
+        [[0, hi], [0.14, lo], [0.36, lo], [0.5, hi], [0.64, lo], [0.86, lo], [1, hi]]
+          .forEach(([at, colour]) => g.addColorStop(at, colour));
+        ctx.globalAlpha = c.w.speaking;
+        rim(); ctx.strokeStyle = g; ctx.stroke();
+      }
+      ctx.restore();
+      ctx.beginPath(); ctx.roundRect(1, 1, W - 2, H - 2, (H - 2) / 2); ctx.clip();
+      const glow = ctx.createRadialGradient(CX, CY, 2, CX, CY, W / 2);
+      glow.addColorStop(0, rgba(col, 0));
+      glow.addColorStop(1, rgba(col, 0.12 * strength));
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+    },
+  },
+  {
+    letter: "H", name: "Oscilloscope",
+    desc: "A jittery trace of the sound wave itself, like a scope. Technical and alive. With Microphone on, the listening cell draws your real samples.",
+    cost: "<b>Wire-in: medium.</b> The overlay gets one level today. <code>voice_agent</code> would also send about 40 raw samples per 20 ms block, then about 30 lines of drawing.",
+    caps: { idle: "flat trace", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.p1 = 0; m.p2 = 0; m.jit = Array(49).fill(0); },
+    step(m, c) {
+      m.p1 += 0.9 + c.lv; m.p2 += 1.7;
+      if (Math.floor(c.t * 60) % 2 === 0) m.jit = m.jit.map(() => Math.random() - 0.5);
+    },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak), n = 48, x0 = 10, x1 = W - 10;
+      ctx.fillStyle = rgba(col, 0.12); ctx.fillRect(x0, CY - 0.25, x1 - x0, 0.5);
+      const real = mic.on && c.state === "listening" && mic.buf;
+      let peak = 0.02;
+      if (real) for (let i = 0; i < mic.buf.length; i += 8) peak = Math.max(peak, Math.abs(mic.buf[i]));
+      ctx.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const u = i / n, taper = Math.pow(Math.sin(Math.PI * u), 0.6);
+        let y;
+        if (real) {
+          y = mic.buf[Math.floor(u * (mic.buf.length - 1))] / peak * 11 * c.lv * taper;
+        } else {
+          y = c.lv * 11 * taper * (0.62 * Math.sin(u * 25 + m.p1) + 0.3 * Math.sin(u * 61 + m.p2)
+                                   + 0.35 * m.jit[i]) + 0.5 * m.jit[i] * c.w.idle;
+        }
+        const x = lerp(x0, x1, u);
+        i ? ctx.lineTo(x, CY - clamp(y, -12, 12)) : ctx.moveTo(x, CY - clamp(y, -12, 12));
+      }
+      ctx.lineWidth = 1.1; ctx.lineJoin = "round";
+      ctx.strokeStyle = rgba(col, 0.95); ctx.stroke();
+    },
+  },
+  {
+    letter: "I", name: "Spectrum",
+    desc: "Eight equaliser bars, low pitches on the left and high on the right, with small caps that fall slowly. With Microphone on, the listening cell shows your real frequencies.",
+    cost: "<b>Wire-in: medium.</b> An FFT of each mic block in <code>voice_agent</code> (numpy, 8 bands, about 15 lines) sent with the level, and the same for the agent's audio. Then about 30 lines of drawing.",
+    caps: { idle: "resting", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.bands = Array(8).fill(0); m.caps = Array(8).fill(0); m.f1 = 2; m.f2 = 5; m.last = 0; },
+    step(m, c) {
+      if (c.lv - m.last > 0.15) { m.f1 = 0.8 + Math.random() * 2.2; m.f2 = 4 + Math.random() * 2.5; }
+      m.last += (c.lv - m.last) * 0.3;
+      const real = mic.on && c.state === "listening" && mic.an ? micBands() : null;
+      for (let b = 0; b < 8; b++) {
+        const shape = Math.max(Math.exp(-(((b - m.f1) / 1.1) ** 2)), 0.8 * Math.exp(-(((b - m.f2) / 1.3) ** 2)));
+        const t = real ? real[b]
+          : c.lv * (0.25 + 0.75 * shape) * (0.85 + 0.3 * Math.random()) + 0.03 * c.w.idle;
+        m.bands[b] += (t - m.bands[b]) * (t > m.bands[b] ? 0.5 : 0.18);
+        m.caps[b] = Math.max(m.caps[b] - 0.012, m.bands[b]);
+      }
+    },
+    draw(ctx, m, c) {
+      capsule(ctx);
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak);
+      const BW = 3.5, GAP = 2.5, start = (W - (8 * BW + 7 * GAP)) / 2, base = CY + 7.5, max = 15;
+      for (let b = 0; b < 8; b++) {
+        const x = start + b * (BW + GAP), h = 1.5 + max * m.bands[b];
+        ctx.fillStyle = rgba(col, 0.95);
+        ctx.beginPath(); ctx.roundRect(x, base - h, BW, h, 1); ctx.fill();
+        ctx.fillStyle = rgba(col, 0.55);
+        ctx.fillRect(x, base - 1.5 - max * m.caps[b] - 2.5, BW, 1.2);
+      }
+    },
+  },
+  {
+    letter: "J", name: "Breathing capsule",
+    desc: "No marks at all: the capsule itself swells with the voice, its top and bottom edges ripple, and a soft light fills it from the inside.",
+    cost: "<b>Wire-in: medium.</b> The real capsule gets its rounded shape from the blur view's corner mask, so a moving outline needs a shape mask and a few points of spare window. About 50 lines.",
+    caps: { idle: "barely breathing", listening: "your mic", speaking: "agent voice" },
+    init(m) { m.phase = 0; m.swell = 0; },
+    step(m, c) {
+      m.phase += (2 + 6 * c.lv) * STEP;
+      m.swell += (c.lv - m.swell) * 0.25;
+    },
+    draw(ctx, m, c) {
+      const col = blend(c.w, RGB.idle, RGB.listen, RGB.speak);
+      const breath = c.w.idle * 0.5 * (0.5 + 0.5 * Math.sin(c.t * 1.6));
+      const s = m.swell, w = W + 6 * s + breath, h = H + 5 * s + breath;
+      const x0 = CX - w / 2, x1 = CX + w / 2, y0 = CY - h / 2, y1 = CY + h / 2, r = h / 2;
+      const wob = x => s * 2.2 * Math.sin(x * 0.25 - m.phase) * Math.sin(Math.PI * clamp((x - x0 - r) / (w - 2 * r)));
+      const body = () => {
+        ctx.beginPath();
+        ctx.moveTo(x0 + r, y0);
+        for (let x = x0 + r; x <= x1 - r; x += 2) ctx.lineTo(x, y0 - wob(x));
+        ctx.arc(x1 - r, CY, r, -Math.PI / 2, Math.PI / 2);
+        for (let x = x1 - r; x >= x0 + r; x -= 2) ctx.lineTo(x, y1 + wob(x + 7));
+        ctx.arc(x0 + r, CY, r, Math.PI / 2, Math.PI * 1.5);
+        ctx.closePath();
+      };
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.38)"; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+      body(); ctx.fillStyle = "rgba(11,12,16,0.98)"; ctx.fill();
+      ctx.restore();
+      body(); ctx.strokeStyle = rgba(col, 0.14 + 0.45 * s); ctx.lineWidth = 1; ctx.stroke();
+      ctx.save(); body(); ctx.clip();
+      const g = ctx.createRadialGradient(CX, CY, 1, CX, CY, w / 2);
+      g.addColorStop(0, rgba(col, 0.05 + 0.4 * s + 0.1 * breath));
+      g.addColorStop(1, rgba(col, 0));
+      ctx.fillStyle = g; ctx.fillRect(x0 - 4, y0 - 4, w + 8, h + 8);
+      ctx.restore();
+    },
+  },
+];
+
+const loudFont = w => {
+  const weight = w.amp > 0.78 ? 650 : w.amp > 0.6 ? 550 : 450;
+  const size = Math.round((11.5 + 3.5 * w.amp) * 2) / 2;
+  return `${weight} ${size}px ${FAMILY}`;
+};
+const RIBBON_FONT = `500 12px ${FAMILY}`;
+
+const WORDS = [
+  {
+    ...TODAY, letter: "K", name: "Caption card", tag: "built, off", words: true, tall: true,
+    desc: "Today's capsule, with your words in the white caption card above it. It shows the last two lines, dropping the oldest words off the front.",
+    cost: "<b>Wire-in: tiny.</b> It's already built: set <code>boss.SHOW_CAPTION = True</code>. The agent's reply already streams into the notification card.",
+    caps: { listening: "your words above today's bars", speaking: "capsule hidden · the reply goes to its card" },
+    draw(ctx, m, c) {
+      ctx.save(); ctx.translate((WIDE - W) / 2, 0); TODAY.draw(ctx, m, c); ctx.restore();
+      const v = wordsFor(c);
+      if (!v || !v.words.length) return;
+      const lines = captionLines(v.words);
+      const ch = lines.length * CAPTION.line + 2 * CAPTION.pad;
+      const x = (WIDE - CAPTION.w) / 2, y = -CAPTION.gap - ch;
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.2)"; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
+      ctx.beginPath(); ctx.roundRect(x, y, CAPTION.w, ch, Math.min(CAPTION.radius, ch / 2));
+      ctx.fillStyle = "#ffffff"; ctx.fill();
+      ctx.restore();
+      ctx.font = CAPTION_FONT; ctx.fillStyle = "rgb(28,30,34)"; ctx.textBaseline = "middle";
+      lines.forEach((l, i) => ctx.fillText(l, x + CAPTION.pad, y + CAPTION.pad + CAPTION.line * (i + 0.5)));
+    },
+  },
+  {
+    letter: "L", name: "Words in the capsule", words: true,
+    desc: "The capsule stretches to fit your words, with small bars at the left. New words slide in on the right, and old ones fade off the left.",
+    cost: "<b>Wire-in: low to medium.</b> The overlay's text mode is already built. Send it the transcript, then add the hugging width and the slide and fade. About 40 lines.",
+    caps: { listening: "your words", speaking: "the agent's words" },
+    init(m) { Bars.init(m); m.w = W; m.scroll = 0; },
+    sample(m, level) { Bars.sample(m, level); },
+    step(m, c) {
+      Bars.step(m);
+      m.view = wordsFor(c);
+      m.run = layout(m.view ? m.view.words : [], () => FONT);
+      hug(m, m.run.width, TEXT_X, TEXT_PAD);
+    },
+    draw(ctx, m, c) {
+      const x0 = (WIDE - m.w) / 2, open = clamp((m.w - W) / 80);
+      const speaking = c.state === "speaking";
+      pill(ctx, x0, m.w);
+      Bars.draw(ctx, m, x0 + lerp((m.w - 34) / 2, TEXT_PAD, open), 9, speaking ? RGB.speak : RGB.listen);
+      if (!m.view) return;
+      wordRun(ctx, m.run, { left: x0 + TEXT_X, right: x0 + m.w - 12, scroll: m.scroll, now: m.view.now,
+        colour: speaking ? RGB.speakLight : RGB.listen, alpha: () => 0.95 * open });
+    },
+  },
+  {
+    letter: "M", name: "Loud words", words: true,
+    desc: "No bars: the words are the waveform. Each word is bigger, bolder and brighter the louder it was said, and the newest one flares with the live level.",
+    cost: "<b>Wire-in: medium.</b> <code>voice_agent</code> would tag each transcript fragment with the mic level while it was said. Per-word fonts and scrolling, about 70 lines.",
+    caps: { listening: "your words", speaking: "the agent's words" },
+    init(m) { m.w = W; m.scroll = 0; },
+    step(m, c) {
+      m.view = wordsFor(c);
+      m.run = layout(m.view ? m.view.words : [], loudFont);
+      hug(m, m.run.width, TEXT_PAD, TEXT_PAD);
+    },
+    draw(ctx, m, c) {
+      const x0 = (WIDE - m.w) / 2, open = clamp((m.w - W) / 80);
+      const speaking = c.state === "speaking", colour = speaking ? RGB.speakLight : RGB.listen;
+      pill(ctx, x0, m.w);
+      if (open < 1) {
+        ctx.beginPath(); ctx.arc(x0 + m.w / 2, CY, 1.8 + 3 * c.lv, 0, Math.PI * 2);
+        ctx.fillStyle = rgba(speaking ? RGB.speak : RGB.listen, 0.9 * (1 - open)); ctx.fill();
+      }
+      if (!m.view) return;
+      const last = m.run.items[m.run.items.length - 1];
+      wordRun(ctx, m.run, { left: x0 + TEXT_PAD, right: x0 + m.w - 12, scroll: m.scroll, now: m.view.now,
+        colour, alpha: it => open * (it === last && m.view.now - it.w.t < 0.6
+          ? 0.55 + 0.45 * clamp(c.lv * 1.4) : 0.38 + 0.6 * it.w.amp) });
+    },
+  },
+  {
+    letter: "N", name: "Words on a ribbon", words: true,
+    desc: "Your words sit on a thin line that ripples with your voice, strongest under the newest word. With no words yet, it's the ribbon alone.",
+    cost: "<b>Wire-in: medium.</b> L's text mode plus C's ribbon under the words, with the ripple centred on the newest word. About 60 lines.",
+    caps: { listening: "your words", speaking: "the agent's words" },
+    init(m) { m.w = W; m.scroll = 0; m.phase = 0; m.nx = 0; },
+    step(m, c) {
+      m.view = wordsFor(c);
+      m.run = layout(m.view ? m.view.words : [], () => RIBBON_FONT);
+      hug(m, m.run.width, TEXT_PAD, TEXT_PAD);
+      m.phase += (2 + 6 * c.lv) * STEP;
+      const last = m.run.items[m.run.items.length - 1];
+      const target = last ? TEXT_PAD + last.x - m.scroll + last.ww / 2 : m.w / 2;
+      m.nx += (target - m.nx) * 0.2;
+    },
+    draw(ctx, m, c) {
+      const x0 = (WIDE - m.w) / 2, open = clamp((m.w - W) / 80);
+      const speaking = c.state === "speaking";
+      pill(ctx, x0, m.w);
+      const col = speaking ? RGB.speak : RGB.listen;
+      const base = lerp(CY, CY + 8.5, open), left = x0 + 12, right = x0 + m.w - 12;
+      ctx.beginPath();
+      for (let x = left; x <= right; x += 1.5) {
+        const u = (x - left) / (right - left), env = Math.sin(Math.PI * u);
+        const near = Math.exp(-(((x - x0 - m.nx) / lerp(18, 34, open)) ** 2));
+        const amp = env * (0.5 + c.lv * lerp(9, 2.8, open) * near);
+        const y = base + amp * Math.sin(x * 0.35 - m.phase);
+        x === left ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.lineWidth = 1.3; ctx.lineCap = "round"; ctx.strokeStyle = rgba(col, 0.9); ctx.stroke();
+      if (!m.view) return;
+      wordRun(ctx, m.run, { left: x0 + TEXT_PAD, right: x0 + m.w - 12, scroll: m.scroll, now: m.view.now,
+        colour: speaking ? RGB.speakLight : RGB.listen, alpha: () => 0.95 * open, y: CY - 3.5 });
+    },
+  },
+  {
+    letter: "O", name: "Karaoke", words: true,
+    desc: "The agent's whole sentence appears dim, and each word lights up as it's said, under a soft highlight that pulses with its voice. Your words trail off behind the newest.",
+    cost: "<b>Wire-in: high.</b> For the agent it needs the reply text slightly ahead of the audio and an estimate of how far playback has got, to light the right word. About 90 lines and the most tuning.",
+    caps: { listening: "your words", speaking: "the agent's words, lit as spoken" },
+    init(m) { m.w = W; m.scroll = 0; m.hx = 0; m.hw = 0; m.ha = 0; },
+    step(m, c) {
+      const speaking = c.state === "speaking";
+      const v = m.view = wordsFor(c);
+      const words = !v ? [] : speaking ? v.phrase.words.filter(w => w.t !== Infinity) : v.words;
+      m.run = layout(words, () => FONT);
+      const said = m.run.items.filter(it => it.w.t <= (v ? v.now : 0));
+      const cur = said[said.length - 1];
+      if (cur) {
+        if (m.hw === 0) { m.hx = cur.x - 5; m.hw = cur.ww + 10; }
+        m.hx += (cur.x - 5 - m.hx) * 0.3; m.hw += (cur.ww + 10 - m.hw) * 0.3;
+      } else { m.hw = 0; }
+      m.ha += ((cur && v.phrase.end === null ? 1 : 0) - m.ha) * 0.15;
+      hug(m, m.run.width, TEXT_PAD, TEXT_PAD, m.hx + m.hw + 40 - (WIDE - 2 * TEXT_PAD));
+    },
+    draw(ctx, m, c) {
+      const x0 = (WIDE - m.w) / 2, open = clamp((m.w - W) / 80);
+      const speaking = c.state === "speaking", v = m.view;
+      pill(ctx, x0, m.w);
+      if (open < 1) {
+        ctx.beginPath(); ctx.arc(x0 + m.w / 2, CY, 1.8 + 3 * c.lv, 0, Math.PI * 2);
+        ctx.fillStyle = rgba(speaking ? RGB.speak : RGB.listen, 0.9 * (1 - open)); ctx.fill();
+      }
+      if (!v || !m.run.items.length) return;
+      const left = x0 + TEXT_PAD;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(left - 8, 0, m.w - TEXT_PAD - 4, H); ctx.clip();
+      ctx.beginPath(); ctx.roundRect(left + m.hx - m.scroll, CY - 9, m.hw, 18, 9);
+      ctx.fillStyle = rgba(speaking ? RGB.speak : RGB.listen,
+        m.ha * open * ((speaking ? 0.26 : 0.12) + (speaking ? 0.3 : 0.18) * c.lv));
+      ctx.fill();
+      ctx.restore();
+      wordRun(ctx, m.run, { left, right: x0 + m.w - 12, scroll: m.scroll, now: v.now,
+        landed: !speaking, colour: speaking ? RGB.speakLight : RGB.listen,
+        alpha: it => open * (speaking ? (it.w.t <= v.now ? 0.98 : 0.34)
+                                      : 0.5 + 0.48 * clamp(1 - (v.now - it.w.t) / 1.5)) });
+    },
+  },
+];
+
+function captionLines(words) {
+  const maxW = CAPTION.w - 2 * CAPTION.pad;
+  const wrap = list => {
+    const lines = [];
+    let line = "";
+    for (const t of list) {
+      const next = line ? line + " " + t : t;
+      if (line && textWidth(next, CAPTION_FONT) > maxW) { lines.push(line); line = t; } else line = next;
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+  const list = words.map(w => w.text);
+  let lines = wrap(list);
+  while (lines.length > CAPTION.lines && list.length > 1) {   // caption_tail
+    list.shift();
+    lines = wrap(["…", ...list]);
+  }
+  return lines;
+}
+
+// ---- cells ------------------------------------------------------------------
+const CYCLE = [["idle", 2.0], ["listening", 4.2], ["speaking", 4.8]];
+const CYCLE_LEN = CYCLE.reduce((s, [, d]) => s + d, 0);
+function cyclePhase(t) {
+  let u = t % CYCLE_LEN;
+  for (const [s, d] of CYCLE) { if (u < d) return s; u -= d; }
+  return "idle";
+}
+
+let simTime = 0, zoom = 2, paused = false;
+const levels = { user: 0, agent: 0 };
+const levelHistory = { user: [], agent: [] };
+const cells = [];
+
+class Cell {
+  constructor(opt, mode, canvas, cap) {
+    Object.assign(this, { opt, mode, canvas, cap, mem: {}, lv: 0, latest: 0, t: 0, lastCap: "",
+                          visible: true });
+    const s = this.state;
+    this.w = { idle: +(s === "idle"), listening: +(s === "listening"), speaking: +(s === "speaking") };
+    this.lw = (opt.words ? WIDE : W) + 2 * M;
+    this.lh = (opt.tall ? H + CAPTION.gap + CAPTION.lines * CAPTION.line + 2 * CAPTION.pad : H) + 2 * M;
+    this.ctx = canvas.getContext("2d");
+    if (opt.init) opt.init(this.mem);
+  }
+  get zoom() { return this.opt.words ? 1 : zoom; }   // words read true at actual size
+  get state() { return this.mode === "cycle" ? cyclePhase(simTime) : this.mode; }
+  sample() {
+    const s = this.state;
+    const level = s === "listening" ? levels.user : s === "speaking" ? levels.agent : 0;
+    this.latest = level;
+    if (this.opt.sample) this.opt.sample(this.mem, level, s, this);
+  }
+  step() {
+    const s = this.state;
+    for (const k of ["idle", "listening", "speaking"]) this.w[k] += (+(k === s) - this.w[k]) * 0.12;
+    this.lv += (this.latest - this.lv) * (this.latest > this.lv ? 0.45 : 0.14);
+    this.t += STEP;
+    if (this.opt.step) this.opt.step(this.mem, this);
+  }
+  draw() {
+    const dpr = window.devicePixelRatio || 1, ctx = this.ctx, z = this.zoom;
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
+    ctx.clearRect(0, 0, this.lw, this.lh);
+    ctx.save(); ctx.translate(M, this.lh - M - H);
+    this.opt.draw(ctx, this.mem, this);
+    ctx.restore();
+    if (this.mode === "cycle") {
+      const s = this.state;
+      const text = this.opt.letter === "A" && s !== "listening"
+        ? `${s} · ${this.mem.state === "hidden" ? "hidden" : "lingering"}` : s;
+      if (text !== this.lastCap) { this.cap.textContent = text; this.lastCap = text; }
+    }
+  }
+}
+
+function sizeCanvases() {
+  const dpr = window.devicePixelRatio || 1;
+  for (const c of cells) {
+    c.canvas.width = Math.round(c.lw * c.zoom * dpr);
+    c.canvas.height = Math.round(c.lh * c.zoom * dpr);
+    c.canvas.style.width = c.lw * c.zoom + "px";
+    c.canvas.style.height = c.lh * c.zoom + "px";
+  }
+}
+
+const SECTIONS = [
+  { options: OPTIONS, modes: ["idle", "listening", "speaking", "cycle"] },
+  { title: "More styles", options: MORE, modes: ["idle", "listening", "speaking", "cycle"],
+    note: "Four more that move with the voice but show no words." },
+  { title: "Styles that show the words", options: WORDS, modes: ["listening", "speaking"],
+    note: "Shown at actual size, so the text reads true whatever the Size setting. The words are sample sentences timed to the simulated voice, or to your syllables when Microphone is on. This page does no speech recognition." },
+];
+const HEADS = {
+  idle: ["Idle", "nobody talking"], listening: ["Listening", "you talk (Fn held)"],
+  speaking: ["Speaking", "the agent talks"], cycle: ["Live cycle", "moves between the three"],
+};
+
+function el(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+function build() {
+  const grid = document.getElementById("grid");
+  for (const section of SECTIONS) {
+    const span = 4 / section.modes.length;
+    if (section.title) grid.append(el("div", "section", `<h2>${section.title}</h2><p>${section.note}</p>`));
+    grid.append(el("div"));
+    for (const mode of section.modes) {
+      const head = el("div", "colhead", `<b>${HEADS[mode][0]}</b>${HEADS[mode][1]}`);
+      if (span > 1) head.style.gridColumn = `span ${span}`;
+      grid.append(head);
+    }
+    for (const opt of section.options) {
+      grid.append(el("div", "label",
+        `<div class="name"><span class="letter">${opt.letter}</span>${opt.name}`
+        + (opt.tag ? ` <span class="tag">${opt.tag}</span>` : "") + `</div>`
+        + `<p class="desc">${opt.desc}</p><div class="cost">${opt.cost}</div>`));
+      for (const mode of section.modes) {
+        const cell = el("div", span > 1 ? "cell wide" : "cell");
+        const canvas = el("canvas");
+        const cap = el("div", "cap", mode === "cycle" ? "" : opt.caps[mode]);
+        cell.append(canvas, cap);
+        grid.append(cell);
+        cells.push(new Cell(opt, mode, canvas, cap));
+      }
+    }
+  }
+  sizeCanvases();
+  // Fifty live canvases is a lot to redraw every frame; draw only what is on screen.
+  const byCanvas = new Map(cells.map(c => [c.canvas, c]));
+  const onScreen = new IntersectionObserver(entries => {
+    for (const e of entries) byCanvas.get(e.target).visible = e.isIntersecting;
+  }, { rootMargin: "120px" });
+  for (const c of cells) onScreen.observe(c.canvas);
+}
+
+// ---- level meters -------------------------------------------------------------
+function drawMeter(canvas, hist) {
+  const dpr = window.devicePixelRatio || 1, w = 120, h = 22;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = getComputedStyle(document.body).color;
+  const n = hist.length;
+  for (let i = 0; i < n; i++) {
+    const bh = Math.max(1, hist[i] * (h - 4));
+    ctx.globalAlpha = 0.35 + 0.65 * (i / n);
+    ctx.fillRect(w - (n - i) * 2, (h - bh) / 2, 1.2, bh);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- clock ----------------------------------------------------------------------
+function takeSample() {
+  levels.user = mic.on ? speech.user.listen(micLevel(), SAMPLE) : speech.user.step(SAMPLE);
+  levels.agent = speech.agent.step(SAMPLE);
+  for (const k of ["user", "agent"]) {
+    levelHistory[k].push(levels[k]);
+    if (levelHistory[k].length > 60) levelHistory[k].shift();
+  }
+  for (const c of cells) c.sample();
+}
+
+let acc = 0, sampleAcc = 0, last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (!paused) {
+    acc += dt;
+    while (acc >= STEP) {
+      acc -= STEP; simTime += STEP; sampleAcc += STEP;
+      while (sampleAcc >= SAMPLE) { sampleAcc -= SAMPLE; takeSample(); }
+      for (const c of cells) c.step();
+    }
+  }
+  for (const c of cells) if (c.visible) c.draw();   // off-screen cells keep stepping
+  drawMeter(document.getElementById("mUser"), levelHistory.user);
+  drawMeter(document.getElementById("mAgent"), levelHistory.agent);
+  requestAnimationFrame(frame);
+}
+
+// ---- controls -------------------------------------------------------------------
+function segmented(id, onPick) {
+  const seg = document.getElementById(id);
+  seg.addEventListener("click", async e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const ok = await onPick(b.dataset.v);
+    if (ok === false) return;
+    for (const x of seg.querySelectorAll("button")) x.setAttribute("aria-pressed", x === b);
+  });
+}
+segmented("source", v => v === "mic" ? (mic.on || startMic()) : (stopMic(), true));
+segmented("zoom", v => { zoom = +v; sizeCanvases(); });
+segmented("desk", v => { lightDesk = v === "light"; document.body.classList.toggle("light-desk", lightDesk); });
+document.getElementById("pause").addEventListener("click", e => {
+  paused = !paused; e.target.textContent = paused ? "Play" : "Pause";
+});
+matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener?.("change", sizeCanvases);
+
+build();
+// ?zoom=3&desk=light: open straight into a view, for screenshots and links.
+const params = new URLSearchParams(location.search);
+for (const [id, key] of [["zoom", "zoom"], ["desk", "desk"]]) {
+  const want = params.get(key);
+  const b = want && document.querySelector(`#${id} button[data-v="${want}"]`);
+  if (b) b.click();
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,1286 @@
+[
+  {
+    "name": "new-empty-checkout",
+    "tasks": [],
+    "user_message": "Fix the checkout bug.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-empty-cli",
+    "tasks": [],
+    "user_message": "Build a CLI for exporting reports.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-while-running",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "While that's running, build an admin dashboard.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-also-script",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Also make a standalone script that cleans old logs.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-explicit",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "New task: investigate the memory leak in the worker.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-postgres",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Can you start something to upgrade us to Postgres 16?",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-darkmode",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Next I want dark mode support across the app.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-ratelimit",
+    "tasks": [],
+    "user_message": "Add rate limiting to the API.",
+    "expected": {
+      "action": "create_task"
+    }
+  },
+  {
+    "name": "new-constraint-preserved",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Start a task to rework billing, but do not change the database schema.",
+    "expected": {
+      "action": "create_task",
+      "semantic_requirements": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "name": "follow-safari",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Make the login fix work in Safari too.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login",
+      "semantic_requirements": [
+        "Safari"
+      ]
+    }
+  },
+  {
+    "name": "follow-oauth",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the login one not to touch OAuth.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login",
+      "semantic_requirements": [
+        "OAuth"
+      ]
+    }
+  },
+  {
+    "name": "follow-ipad",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "The settings one should support iPad too.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_settings",
+      "semantic_requirements": [
+        "iPad"
+      ]
+    }
+  },
+  {
+    "name": "follow-schema",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Don't change the database schema for the login work.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login",
+      "semantic_requirements": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "name": "follow-button",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Use the existing Button component for the settings screen.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_settings",
+      "semantic_requirements": [
+        "Button"
+      ]
+    }
+  },
+  {
+    "name": "follow-backcompat",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Tell auth to keep backwards compatibility.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_auth",
+      "semantic_requirements": [
+        "backwards"
+      ]
+    }
+  },
+  {
+    "name": "follow-tests",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Also add tests for the redirect fix.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "follow-tokens",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "For the mobile layout, follow the design tokens.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "follow-mockdata",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The dashboard one can use mock data for now.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_dash",
+      "semantic_requirements": [
+        "mock"
+      ]
+    }
+  },
+  {
+    "name": "follow-frontend-only",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Make sure the login work only touches frontend code.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login",
+      "semantic_requirements": [
+        "frontend"
+      ]
+    }
+  },
+  {
+    "name": "status-login",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "What's the login thing doing?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "status-everything",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "How's everything going?",
+    "expected": {
+      "action": "list_tasks"
+    }
+  },
+  {
+    "name": "status-billing",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Did billing finish?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_billing"
+    }
+  },
+  {
+    "name": "status-settings",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Status on the settings work?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "status-running",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "What's still in progress right now?",
+    "expected": {
+      "action": "list_tasks"
+    }
+  },
+  {
+    "name": "status-dash-waiting",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "What is the dashboard waiting on?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_dash"
+    }
+  },
+  {
+    "name": "interrupt-login",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the login one.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "interrupt-settings",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause the settings work.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "interrupt-auth",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Wait, stop auth for a second.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "interrupt-redirect",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Hold off on the redirect fix.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "interrupt-only-running",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Stop the one that's running.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "interrupt-freeze",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Freeze the settings task for now.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "resume-dash",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Let the dashboard continue.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_dash"
+    }
+  },
+  {
+    "name": "resume-only-paused",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Resume what we paused.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_dash"
+    }
+  },
+  {
+    "name": "resume-login",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive",
+        "status": "running"
+      }
+    ],
+    "user_message": "Carry on with the login fix.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "resume-unpause",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "waiting_for_user"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive",
+        "status": "running"
+      }
+    ],
+    "user_message": "Un-pause it.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "cancel-settings",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Forget the settings task entirely.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "cancel-login",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Kill the login task, we're going another direction.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_login"
+    }
+  },
+  {
+    "name": "cancel-dash",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Abandon the dashboard.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_dash"
+    }
+  },
+  {
+    "name": "cancel-mobile",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Scrap the mobile layout work.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "cancel-auth",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "We don't need the auth work anymore, drop it.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "ambig-stop-login",
+    "tasks": [
+      {
+        "task_id": "task_login_fix",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_anim",
+        "title": "Add login page animation",
+        "goal": "Animate the login page transitions",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the login one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig-tell-login",
+    "tasks": [
+      {
+        "task_id": "task_login_fix",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_anim",
+        "title": "Add login page animation",
+        "goal": "Animate the login page transitions",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the login one to use the new API.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig-status-login",
+    "tasks": [
+      {
+        "task_id": "task_login_fix",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_anim",
+        "title": "Add login page animation",
+        "goal": "Animate the login page transitions",
+        "status": "running"
+      }
+    ],
+    "user_message": "How's the login task going?",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig-stop-it",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop it.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig-cancel-login",
+    "tasks": [
+      {
+        "task_id": "task_login_fix",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_anim",
+        "title": "Add login page animation",
+        "goal": "Animate the login page transitions",
+        "status": "running"
+      }
+    ],
+    "user_message": "Cancel the login thing.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ambig-pause-that",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause that one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "ref-failed-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before expiry",
+        "status": "running"
+      },
+      {
+        "task_id": "task_import",
+        "title": "CSV import",
+        "goal": "Import CSV files into the catalog",
+        "status": "failed"
+      }
+    ],
+    "user_message": "What happened with the one that failed?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_import"
+    }
+  },
+  {
+    "name": "ref-waiting-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The one that's waiting for me - what does it need?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_dash"
+    }
+  },
+  {
+    "name": "ref-running-logging",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Tell the running one to add logging.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_auth",
+      "semantic_requirements": [
+        "logging"
+      ]
+    }
+  },
+  {
+    "name": "ref-redirect-sso",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "The redirect one should also handle SSO.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_login",
+      "semantic_requirements": [
+        "SSO"
+      ]
+    }
+  },
+  {
+    "name": "ref-completed-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Show me the completed one.",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_billing"
+    }
+  },
+  {
+    "name": "ref-auth-no-merge",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before they expire",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "The auth thing - don't merge anything yet.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_auth",
+      "semantic_requirements": [
+        "merge"
+      ]
+    }
+  },
+  {
+    "name": "ref-not-login",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the one that isn't the login fix to wrap up.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_settings"
+    }
+  },
+  {
+    "name": "direct-thanks",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Thanks, that's all for now.",
+    "expected": {
+      "action": "answer_directly"
+    }
+  },
+  {
+    "name": "direct-greeting",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect to homepage after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make the settings screen responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "user_message": "Good morning!",
+    "expected": {
+      "action": "answer_directly"
+    }
+  }
+]

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stands in for the codex binary: `codex app-server` runs the fake.
+[ "$1" = "app-server" ] || { echo "unexpected: $*" >&2; exit 2; }
+exec "${FAKE_PYTHON:-/usr/bin/python3}" "$(dirname "$0")/fake_app_server.py" "${FAKE_MODE:-plain}"

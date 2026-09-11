@@ -1,0 +1,600 @@
+[
+  {
+    "name": "proj-create-named",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Fix the signup form in Cheatly.",
+    "expected": {
+      "action": "create_task",
+      "project": "Cheatly"
+    }
+  },
+  {
+    "name": "proj-create-other",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Start a dark mode task in Posely.",
+    "expected": {
+      "action": "create_task",
+      "project": "Posely"
+    }
+  },
+  {
+    "name": "proj-create-while-running",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "While the login fix runs, have Cheatly redo its onboarding.",
+    "expected": {
+      "action": "create_task",
+      "project": "Cheatly"
+    }
+  },
+  {
+    "name": "proj-follow-login",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Tell the Posely login one not to touch OAuth.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_p_login",
+      "semantic_requirements": [
+        "OAuth"
+      ]
+    }
+  },
+  {
+    "name": "proj-follow-billing",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "The Cheatly billing task should refund the duplicates.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_c_billing",
+      "semantic_requirements": [
+        "refund"
+      ]
+    }
+  },
+  {
+    "name": "proj-follow-implied",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Make the pagination work with cursors.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_p_api",
+      "semantic_requirements": [
+        "cursor"
+      ]
+    }
+  },
+  {
+    "name": "proj-status-everything",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "What's everything doing?",
+    "expected": {
+      "action": "list_projects"
+    }
+  },
+  {
+    "name": "proj-status-one",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "What's going on in Cheatly?",
+    "expected": {
+      "action": "inspect_project"
+    }
+  },
+  {
+    "name": "proj-status-task",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "How's the Posely login fix?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_p_login"
+    }
+  },
+  {
+    "name": "proj-interrupt",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Stop the Posely login work.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_p_login"
+    }
+  },
+  {
+    "name": "proj-resume",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Let the Cheatly billing one continue.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_c_billing"
+    }
+  },
+  {
+    "name": "proj-cancel",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Kill the pagination task in Posely.",
+    "expected": {
+      "action": "cancel_task",
+      "task_id": "task_p_api"
+    }
+  },
+  {
+    "name": "proj-ambig-auth",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_auth",
+            "title": "Auth hardening",
+            "goal": "Harden auth flows",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_auth",
+            "title": "Auth tokens",
+            "goal": "Rotate auth tokens",
+            "status": "running"
+          }
+        ]
+      }
+    ],
+    "user_message": "Tell the auth one to add logging.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "proj-ambig-stop-auth",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_auth",
+            "title": "Auth hardening",
+            "goal": "Harden auth flows",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_auth",
+            "title": "Auth tokens",
+            "goal": "Rotate auth tokens",
+            "status": "running"
+          }
+        ]
+      }
+    ],
+    "user_message": "Stop the auth work.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "proj-disambig-auth",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_auth",
+            "title": "Auth hardening",
+            "goal": "Harden auth flows",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_auth",
+            "title": "Auth tokens",
+            "goal": "Rotate auth tokens",
+            "status": "running"
+          }
+        ]
+      }
+    ],
+    "user_message": "Tell the Cheatly auth one to add logging.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_c_auth",
+      "semantic_requirements": [
+        "logging"
+      ]
+    }
+  },
+  {
+    "name": "proj-explicit-wins",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect after login",
+            "status": "running"
+          },
+          {
+            "task_id": "task_p_api",
+            "title": "API pagination",
+            "goal": "Paginate the list endpoints",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Cheatly",
+        "tasks": [
+          {
+            "task_id": "task_c_billing",
+            "title": "Billing issue",
+            "goal": "Fix double-charged invoices",
+            "status": "waiting_for_user"
+          }
+        ]
+      }
+    ],
+    "user_message": "Actually, in Cheatly: pause the billing thing.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_c_billing"
+    }
+  }
+]

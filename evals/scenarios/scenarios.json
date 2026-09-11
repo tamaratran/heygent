@@ -1,0 +1,713 @@
+[
+  {
+    "name": "create-then-constrain",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Fix the login redirect bug.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Tell it not to touch OAuth.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 0,
+          "semantic_requirements": [
+            "OAuth"
+          ]
+        }
+      },
+      {
+        "user_message": "How's it going?",
+        "expected": {
+          "action": "inspect_task",
+          "created_in_turn": 0
+        }
+      }
+    ]
+  },
+  {
+    "name": "two-tasks-then-route",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Fix the login redirect.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Also fix the settings layout on mobile.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Make the login one work in Safari too.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 0,
+          "semantic_requirements": [
+            "Safari"
+          ]
+        }
+      },
+      {
+        "user_message": "Stop the settings one.",
+        "expected": {
+          "action": "interrupt_task",
+          "created_in_turn": 1
+        },
+        "expect_status": "waiting_for_user"
+      },
+      {
+        "user_message": "Actually let it continue.",
+        "expected": {
+          "action": "resume_task",
+          "created_in_turn": 1
+        },
+        "expect_status": "running"
+      }
+    ]
+  },
+  {
+    "name": "spec-example-six-turns",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Fix the login redirect.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Also fix settings on mobile.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "How's the first one?",
+        "expected": {
+          "action": "inspect_task",
+          "created_in_turn": 0
+        }
+      },
+      {
+        "user_message": "Tell it not to touch OAuth.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 0,
+          "semantic_requirements": [
+            "OAuth"
+          ]
+        }
+      },
+      {
+        "user_message": "Stop the other one.",
+        "expected": {
+          "action": "interrupt_task",
+          "created_in_turn": 1
+        }
+      },
+      {
+        "user_message": "Actually let it continue.",
+        "expected": {
+          "action": "resume_task",
+          "created_in_turn": 1
+        }
+      }
+    ]
+  },
+  {
+    "name": "interrupt-steer-resume",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Wait, pause the login work.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_login"
+        },
+        "expect_status": "waiting_for_user"
+      },
+      {
+        "user_message": "Tell it to keep the token storage unchanged.",
+        "expected": {
+          "action": "send_to_task",
+          "task_id": "task_login",
+          "semantic_requirements": [
+            "token"
+          ]
+        }
+      },
+      {
+        "user_message": "Okay, carry on with it.",
+        "expected": {
+          "action": "resume_task",
+          "task_id": "task_login"
+        },
+        "expect_status": "running"
+      }
+    ]
+  },
+  {
+    "name": "cancel-is-permanent",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Start a task to build a CSV export.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Actually forget that entirely, kill it.",
+        "expected": {
+          "action": "cancel_task",
+          "created_in_turn": 0
+        },
+        "expect_status": "cancelled"
+      },
+      {
+        "user_message": "Now fix the signup form validation instead.",
+        "expected": {
+          "action": "create_task"
+        }
+      }
+    ]
+  },
+  {
+    "name": "status-then-followup",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before expiry",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "What's everything doing?",
+        "expected": {
+          "action": "list_tasks"
+        }
+      },
+      {
+        "user_message": "Tell auth to add logging around the refresh.",
+        "expected": {
+          "action": "send_to_task",
+          "task_id": "task_auth",
+          "semantic_requirements": [
+            "logging"
+          ]
+        }
+      },
+      {
+        "user_message": "What is the dashboard waiting on?",
+        "expected": {
+          "action": "inspect_task",
+          "task_id": "task_dash"
+        }
+      }
+    ]
+  },
+  {
+    "name": "pronoun-that-one",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Investigate the memory leak in the worker.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "That one should only look at the queue consumer.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 0,
+          "semantic_requirements": [
+            "queue"
+          ]
+        }
+      },
+      {
+        "user_message": "Pause that.",
+        "expected": {
+          "action": "interrupt_task",
+          "created_in_turn": 0
+        }
+      }
+    ]
+  },
+  {
+    "name": "clarify-then-disambiguate",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Also animate the login page.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Stop the login one.",
+        "expected": {
+          "action": "clarify"
+        }
+      },
+      {
+        "user_message": "I mean the redirect fix.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_login"
+        }
+      }
+    ]
+  },
+  {
+    "name": "constraint-before-create",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Rework the billing page, but do not change the API contract.",
+        "expected": {
+          "action": "create_task",
+          "semantic_requirements": [
+            "API contract"
+          ]
+        }
+      },
+      {
+        "user_message": "Also keep the tests passing.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 0,
+          "semantic_requirements": [
+            "tests"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "resume-the-waiting-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before expiry",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Let the dashboard continue.",
+        "expected": {
+          "action": "resume_task",
+          "task_id": "task_dash"
+        },
+        "expect_status": "running"
+      },
+      {
+        "user_message": "How's it doing now?",
+        "expected": {
+          "action": "inspect_task",
+          "task_id": "task_dash"
+        }
+      }
+    ]
+  },
+  {
+    "name": "three-creates",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Fix the flaky checkout test.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "While that runs, add request tracing to the API.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "And start something to upgrade the linter.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "How's everything going?",
+        "expected": {
+          "action": "list_tasks"
+        }
+      }
+    ]
+  },
+  {
+    "name": "wrong-direction-correction",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Add dark mode to the app.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Wait - don't restyle the marketing pages, app screens only.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 0,
+          "semantic_requirements": [
+            "marketing"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "stop-everything-running",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Pause the login work.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_login"
+        }
+      },
+      {
+        "user_message": "And pause the settings work too.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_settings"
+        }
+      },
+      {
+        "user_message": "What's still running?",
+        "expected": {
+          "action": "list_tasks"
+        }
+      }
+    ]
+  },
+  {
+    "name": "cancel-vs-interrupt",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Hold the settings one for a moment.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_settings"
+        },
+        "expect_status": "waiting_for_user"
+      },
+      {
+        "user_message": "Actually we're never doing that redesign - kill it.",
+        "expected": {
+          "action": "cancel_task",
+          "task_id": "task_settings"
+        },
+        "expect_status": "cancelled"
+      }
+    ]
+  },
+  {
+    "name": "followup-after-status",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "How is the login fix going?",
+        "expected": {
+          "action": "inspect_task",
+          "task_id": "task_login"
+        }
+      },
+      {
+        "user_message": "Tell it to also cover SSO logins.",
+        "expected": {
+          "action": "send_to_task",
+          "task_id": "task_login",
+          "semantic_requirements": [
+            "SSO"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "new-task-mid-conversation",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Make the settings screen support iPad.",
+        "expected": {
+          "action": "send_to_task",
+          "task_id": "task_settings",
+          "semantic_requirements": [
+            "iPad"
+          ]
+        }
+      },
+      {
+        "user_message": "Separate thing: profile the slow search endpoint.",
+        "expected": {
+          "action": "create_task"
+        }
+      },
+      {
+        "user_message": "Tell the search one to only measure, not optimize yet.",
+        "expected": {
+          "action": "send_to_task",
+          "created_in_turn": 1,
+          "semantic_requirements": [
+            "measure"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "greeting-then-work",
+    "tasks": [],
+    "turns": [
+      {
+        "user_message": "Good morning!",
+        "expected": {
+          "action": "answer_directly"
+        }
+      },
+      {
+        "user_message": "Fix the broken password reset email.",
+        "expected": {
+          "action": "create_task"
+        }
+      }
+    ]
+  },
+  {
+    "name": "inspect-completed",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before expiry",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Did billing finish?",
+        "expected": {
+          "action": "inspect_task",
+          "task_id": "task_billing"
+        }
+      },
+      {
+        "user_message": "Great, now retry queue metrics - new task.",
+        "expected": {
+          "action": "create_task"
+        }
+      }
+    ]
+  },
+  {
+    "name": "double-interrupt-safe",
+    "tasks": [
+      {
+        "task_id": "task_login",
+        "title": "Fix login redirect",
+        "goal": "Fix intermittent redirect after login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_settings",
+        "title": "Mobile settings layout",
+        "goal": "Make settings responsive on mobile",
+        "status": "running"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "Stop the login one.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_login"
+        }
+      },
+      {
+        "user_message": "Stop the login one!",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_login"
+        }
+      }
+    ]
+  },
+  {
+    "name": "route-by-goal-words",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth token refresh",
+        "goal": "Refresh auth tokens before expiry",
+        "status": "running"
+      },
+      {
+        "task_id": "task_billing",
+        "title": "Billing webhook retries",
+        "goal": "Retry failed billing webhooks",
+        "status": "completed"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Admin dashboard",
+        "goal": "Build the admin dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "turns": [
+      {
+        "user_message": "The token thing should handle clock skew.",
+        "expected": {
+          "action": "send_to_task",
+          "task_id": "task_auth",
+          "semantic_requirements": [
+            "clock skew"
+          ]
+        }
+      },
+      {
+        "user_message": "Pause the token work.",
+        "expected": {
+          "action": "interrupt_task",
+          "task_id": "task_auth"
+        }
+      }
+    ]
+  }
+]

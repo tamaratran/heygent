@@ -1,0 +1,646 @@
+[
+  {
+    "name": "ord-second-stop",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the second one to stop.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_dash"
+    }
+  },
+  {
+    "name": "ord-first-status",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "What's the first one doing?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "ord-third-message",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the third one to skip the tests.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_bill",
+      "semantic_requirements": [
+        "skip the tests"
+      ]
+    }
+  },
+  {
+    "name": "ord-last-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause the one you started last.",
+    "expected": {
+      "action": "pause_task",
+      "task_id": "task_bill"
+    }
+  },
+  {
+    "name": "ord-first-two-of-two",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the first one.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "desc-stripe-thing",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Did the Stripe thing ever finish?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_bill"
+    }
+  },
+  {
+    "name": "desc-auth-thing",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "What happened with the auth thing?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "desc-charts",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the charts one to use Recharts.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_dash",
+      "semantic_requirements": [
+        "Recharts"
+      ]
+    }
+  },
+  {
+    "name": "desc-payments",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the payments work.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_bill"
+    }
+  },
+  {
+    "name": "desc-login",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "How's the login one going?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "ana-that-agent-one-open",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      }
+    ],
+    "user_message": "Actually have that agent try the other approach.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_auth",
+      "semantic_requirements": [
+        "other approach"
+      ]
+    }
+  },
+  {
+    "name": "ana-tell-it",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell it not to touch the schema.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_auth",
+      "semantic_requirements": [
+        "schema"
+      ]
+    }
+  },
+  {
+    "name": "ana-stop-that",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      }
+    ],
+    "user_message": "Wait, stop that.",
+    "expected": {
+      "action": "interrupt_task",
+      "task_id": "task_auth"
+    }
+  },
+  {
+    "name": "ana-salient-is-the-blocked-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the session race",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the dashboard",
+        "status": "waiting_for_user"
+      }
+    ],
+    "user_message": "Tell it to use the existing chart component.",
+    "expected": {
+      "action": "send_to_task",
+      "task_id": "task_dash",
+      "semantic_requirements": [
+        "existing chart component"
+      ]
+    }
+  },
+  {
+    "name": "xfer-first-to-mobile",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the session race",
+        "status": "running"
+      },
+      {
+        "task_id": "task_mobile",
+        "title": "Mobile app login",
+        "goal": "Port login to the mobile app",
+        "status": "running"
+      }
+    ],
+    "user_message": "Take what the first one found and give it to the mobile one.",
+    "expected": {
+      "action": "handoff_task_context"
+    }
+  },
+  {
+    "name": "xfer-named-to-named",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the session race",
+        "status": "running"
+      },
+      {
+        "task_id": "task_mobile",
+        "title": "Mobile app login",
+        "goal": "Port login to the mobile app",
+        "status": "running"
+      }
+    ],
+    "user_message": "Give the auth findings to the mobile task.",
+    "expected": {
+      "action": "handoff_task_context"
+    }
+  },
+  {
+    "name": "amb-stop-the-login-one",
+    "tasks": [
+      {
+        "task_id": "task_login_a",
+        "title": "Login redirect fix",
+        "goal": "Fix the post-login redirect",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_b",
+        "title": "Login rate limiting",
+        "goal": "Rate limit the login endpoint",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the dashboard",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the login one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "amb-cancel-that",
+    "tasks": [
+      {
+        "task_id": "task_login_a",
+        "title": "Login redirect fix",
+        "goal": "Fix the post-login redirect",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_b",
+        "title": "Login rate limiting",
+        "goal": "Rate limit the login endpoint",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the dashboard",
+        "status": "running"
+      }
+    ],
+    "user_message": "Cancel that one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "amb-second-of-ambiguous",
+    "tasks": [
+      {
+        "task_id": "task_login_a",
+        "title": "Login redirect fix",
+        "goal": "Fix the post-login redirect",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_b",
+        "title": "Login rate limiting",
+        "goal": "Rate limit the login endpoint",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the dashboard",
+        "status": "running"
+      }
+    ],
+    "user_message": "Kill it.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "calib-readonly-may-resolve",
+    "tasks": [
+      {
+        "task_id": "task_login_a",
+        "title": "Login redirect fix",
+        "goal": "Fix the post-login redirect",
+        "status": "running"
+      },
+      {
+        "task_id": "task_login_b",
+        "title": "Login rate limiting",
+        "goal": "Rate limit the login endpoint",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the dashboard",
+        "status": "running"
+      }
+    ],
+    "user_message": "How are the login ones doing?",
+    "expected": {
+      "action": "list_tasks",
+      "also_accept": [
+        "inspect_task",
+        "list_subagents",
+        "search_sessions"
+      ]
+    }
+  },
+  {
+    "name": "miss-no-such-agent",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Tell the deployment one to roll back.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "miss-fourth-of-three",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Stop the fourth one.",
+    "expected": {
+      "action": "clarify"
+    }
+  },
+  {
+    "name": "done-did-it-finish",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the session race",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Stripe retries",
+        "status": "completed"
+      }
+    ],
+    "user_message": "Did the billing one finish?",
+    "expected": {
+      "action": "inspect_task",
+      "task_id": "task_bill",
+      "also_accept": [
+        "search_sessions",
+        "list_tasks",
+        "list_subagents"
+      ]
+    }
+  },
+  {
+    "name": "done-resume-it",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the session race",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Stripe retries",
+        "status": "completed"
+      }
+    ],
+    "user_message": "Pick the billing one back up.",
+    "expected": {
+      "action": "resume_task",
+      "task_id": "task_bill"
+    }
+  },
+  {
+    "name": "scope-only-named-one",
+    "tasks": [
+      {
+        "task_id": "task_auth",
+        "title": "Auth race condition",
+        "goal": "Fix the intermittent session race in login",
+        "status": "running"
+      },
+      {
+        "task_id": "task_dash",
+        "title": "Analytics dashboard",
+        "goal": "Build the analytics dashboard page",
+        "status": "running"
+      },
+      {
+        "task_id": "task_bill",
+        "title": "Billing webhook retries",
+        "goal": "Make Stripe webhook retries idempotent",
+        "status": "running"
+      }
+    ],
+    "user_message": "Pause everything except the auth one.",
+    "expected": {
+      "action": "pause_task"
+    }
+  }
+]

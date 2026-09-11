@@ -1,0 +1,61 @@
+[
+  {
+    "name": "discover-unknown-clear",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": [
+          {
+            "task_id": "task_p_login",
+            "title": "Fix login redirect",
+            "goal": "Fix redirect",
+            "status": "running"
+          }
+        ]
+      },
+      {
+        "name": "Starling",
+        "unregistered": true
+      }
+    ],
+    "user_message": "Fix the login bug in Starling.",
+    "expected": {
+      "action": "create_task",
+      "project": "Starling"
+    }
+  },
+  {
+    "name": "discover-unknown-second",
+    "projects": [
+      {
+        "name": "Cheatly",
+        "tasks": []
+      },
+      {
+        "name": "Meadowlark",
+        "unregistered": true
+      }
+    ],
+    "user_message": "Start a task in Meadowlark to add CSV export.",
+    "expected": {
+      "action": "create_task",
+      "project": "Meadowlark",
+      "semantic_requirements": [
+        "CSV"
+      ]
+    }
+  },
+  {
+    "name": "discover-nonexistent-asks",
+    "projects": [
+      {
+        "name": "Posely",
+        "tasks": []
+      }
+    ],
+    "user_message": "Fix the checkout flow in Zanzibar.",
+    "expected": {
+      "action": "clarify"
+    }
+  }
+]

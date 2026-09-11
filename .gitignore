@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Local reference kits, never committed.
+openai-live-api-alpha/
+
+# Local state
+dist/
+.venv/
+__pycache__/
+session.jsonl
+.myconductor/
+
+# Leftovers from earlier experiments, kept locally but not published.
+main.py
+voice.sh
