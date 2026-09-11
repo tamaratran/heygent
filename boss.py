@@ -173,6 +173,14 @@ MANAGER_TURN_TIMEOUT_S = 300.0
 # its clock. 0 turns this off.
 IDLE_RETIRE_S = 6 * 3600.0
 
+# --- how many workers may work at once -----------------------------------
+# A cap on workers actually working - an idle one, or one waiting for you,
+# holds no slot. It is there so a machine is not asked to run more live
+# sessions than it can hold, not to ration work; the original 3 was a guess
+# made before anyone had run that many, and it refused launches while most
+# of the roster sat idle. 0 turns the cap off entirely.
+MAX_CONCURRENT_TASKS = 10
+
 # --- the watchdog --------------------------------------------------------
 # How often to sweep for wedged workers: boot dialogs waiting on a keypress
 # nobody will give, and tasks still marked running whose PTY has gone. Both

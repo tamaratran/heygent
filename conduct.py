@@ -69,7 +69,8 @@ from conductor.boss_bridge import BossBridge
 from conductor.conductor_mcp import ConductorMcp
 from conductor.boss_session import BossSessionStore, render_timeline
 from conductor.pty_manager import PtyManagerBackend
-from conductor.global_conductor import GlobalConductor
+from conductor.global_conductor import (GlobalConductor,
+                                        MAX_CONCURRENT_TASKS)
 from conductor.gui_permissions import ask_for_missing_grants
 from conductor.plain_text import plain_text
 from conductor.notifications import (NotificationService,
@@ -494,6 +495,9 @@ def build_conductor(home: Path,
                             surfaces=surfaces,
                             surface_preference=preference,
                             idle_retire_s=getattr(boss, "IDLE_RETIRE_S", 0.0),
+                            max_concurrent_tasks=getattr(
+                                boss, "MAX_CONCURRENT_TASKS",
+                                MAX_CONCURRENT_TASKS),
                             manager=build_boss(runtime, home, boss_mode,
                                                boss_transport))
     if isinstance(built.manager, PtyManagerBackend):

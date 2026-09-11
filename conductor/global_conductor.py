@@ -106,6 +106,13 @@ def _trailing_question(summary: str) -> str:
     return text[start + 2:] if start >= 0 else text
 
 
+# How many workers may be working at once, when nobody says otherwise.
+# The cap exists so a machine is not asked to run more sessions than it can
+# hold, not to ration work: an idle worker holds no slot. boss.MAX_CONCURRENT_
+# TASKS overrides it, and 0 there means no cap at all.
+MAX_CONCURRENT_TASKS = 10
+
+
 def carries_users_words(message: str, utterances: list[str]) -> bool | None:
     """Whether a follow-up carries what the user said: their whole
     utterance inside it, or it inside their utterance (a quoted part).
@@ -157,7 +164,7 @@ class GlobalConductor:
                  search_roots: list[str | Path] | None = None,
                  workspace_factory: Callable[[Project],
                                              WorkspaceManager] | None = None,
-                 max_concurrent_tasks: int = 3,
+                 max_concurrent_tasks: int = MAX_CONCURRENT_TASKS,
                  surface: SessionSurface | None = None,
                  surfaces: dict[str, SessionSurface] | None = None,
                  surface_preference: SurfacePreference | None = None,
@@ -178,7 +185,9 @@ class GlobalConductor:
         self.bus = bus or ObservabilityBus()
         self.workspace_factory = (workspace_factory
                                   or default_workspace_factory(self.projects))
-        self.max_concurrent_tasks = max_concurrent_tasks
+        # How many workers may be working at once. 0 (or None) means no
+        # cap: the machine's own limits decide. See boss.MAX_CONCURRENT_TASKS.
+        self.max_concurrent_tasks = int(max_concurrent_tasks or 0)
         # Registered surface implementations by preference name. The single
         # `surface` argument registers as the transcript fallback; richer
         # implementations (interactive-terminal, claude-app...) slot in via
@@ -1309,9 +1318,13 @@ class GlobalConductor:
                 raise ValueError("create_task needs a project_id when more "
                                  "than one project is registered")
             project_id = projects[0].id
-        busy = [t for t in self.list_tasks()
-                if t.status in ("starting", "running") and self._worker_busy(t)]
-        if len(busy) >= self.max_concurrent_tasks:
+        if self.max_concurrent_tasks:
+            busy = [t for t in self.list_tasks()
+                    if t.status in ("starting", "running")
+                    and self._worker_busy(t)]
+        else:
+            busy = []
+        if self.max_concurrent_tasks and len(busy) >= self.max_concurrent_tasks:
             raise RuntimeError(
                 f"{len(busy)} workers are busy (limit "
                 f"{self.max_concurrent_tasks}); wait for one to finish its "
