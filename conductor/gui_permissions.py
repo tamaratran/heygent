@@ -100,6 +100,7 @@ APP_NAMES = {
     "com.googlecode.iterm2": "iTerm2",
     "com.mitchellh.ghostty": "Ghostty",
     "com.cmuxterm.app": "cmux",
+    "ai.voice-agent.conductor": "Heygent",   # app_bundle.BUNDLE_ID
     "dev.warp.Warp-Stable": "Warp",
     "net.kovidgoyal.kitty": "kitty",
     "org.alacritty": "Alacritty",
@@ -191,7 +192,7 @@ def first_launch_banner(grants=None, color: bool = False) -> str:
     label_w = max(len(LABELS[grant]) for grant in row_grants)
     purpose_w = max(len(PURPOSES[grant]) for grant in row_grants)
     # (plain, shown, style): plain carries the width, shown the dress.
-    title = "Voice Conductor · First launch"
+    title = "Heygent · First launch"
     body = [(title, title, "title"), ("", "", None),
             ("macOS permissions this app uses",) * 2 + (None,),
             ("(System Settings > Privacy & Security):",) * 2 + (None,),

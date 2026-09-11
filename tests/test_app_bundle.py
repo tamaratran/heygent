@@ -27,7 +27,7 @@ class TheBundle(unittest.TestCase):
 
     def test_it_is_a_complete_app_bundle(self):
         app = self.build()
-        self.assertEqual(app.name, "Voice Agent.app")
+        self.assertEqual(app.name, "Heygent.app")
         with (app / "Contents" / "Info.plist").open("rb") as handle:
             info = plistlib.load(handle)
         self.assertEqual(info["CFBundleIdentifier"], app_bundle.BUNDLE_ID)

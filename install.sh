@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-line installer for the Voice Conductor:
+# One-line installer for Heygent:
 #
 #   curl -fsSL https://raw.githubusercontent.com/tamaratran/voice-agent/master/install.sh | bash
 #

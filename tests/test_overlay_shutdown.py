@@ -69,7 +69,7 @@ class DismissOrderTest(unittest.TestCase):
 class ShutdownTest(unittest.TestCase):
     def test_there_is_always_a_way_out(self) -> None:
         source = Path(overlay.__file__).read_text()
-        self.assertIn("Quit Voice Agent", source)
+        self.assertIn("Quit Heygent", source)
         # Both menu branches, so it is there even with no activity at all.
         self.assertEqual(source.count("self._add_quit_item(menu)"), 2)
 

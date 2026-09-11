@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Voice Conductor: hold Fn, talk, manage many coding agents. See conduct.py.
+# Heygent: hold Fn, talk, manage many coding agents. See conduct.py.
 #
 set -euo pipefail
 cd "$(dirname "$0")"

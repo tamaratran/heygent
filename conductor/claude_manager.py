@@ -26,12 +26,13 @@ from .capabilities import capability_block
 from .observability import ObservabilityEvent, application_log
 from .task_types import Task
 
-MANAGER_PROMPT_VERSION = "manager-v24"
+MANAGER_PROMPT_VERSION = "manager-v25"
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts/manager.md"
 
 _FALLBACK_PROMPT = (
-    "You conduct coding agents across the user's local projects. Resolve "
-    "which project and task each message means using your tools, then act. "
+    "You are Heygent. You conduct coding agents across the user's local "
+    "projects. Resolve which project and task each message means using your "
+    "tools, then act. "
     "Ask one short question when a reference is materially ambiguous. Reply "
     "in one or two spoken sentences.")
 
