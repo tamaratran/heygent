@@ -1490,7 +1490,9 @@ class VoiceAgent:
                 # the hold alone would let later deltas resume mid-barge-in.
                 if self.holding or self.muted_turn:
                     continue
-                pcm = base64.b64decode(event.get("audio", ""))
+                # The samples are in "delta" (measured 2026-09-11). Reading
+                # "audio" found nothing, so every reply played as silence.
+                pcm = base64.b64decode(event.get("delta", ""))
                 # The stream never stops - silence arrives as audio too -
                 # so the first delta after release is not the first word.
                 # The first audible one is.

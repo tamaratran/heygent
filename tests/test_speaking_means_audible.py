@@ -114,7 +114,7 @@ class TheFirstWordIsTheFirstAudibleDelta(unittest.TestCase):
     def deltas(self, *blocks: bytes) -> FakeWebSocket:
         return FakeWebSocket([
             {"type": "session.output_audio.delta",
-             "audio": base64.b64encode(block).decode()}
+             "delta": base64.b64encode(block).decode()}
             for block in blocks])
 
     def test_silence_after_release_is_not_the_reply(self) -> None:
@@ -130,6 +130,12 @@ class TheFirstWordIsTheFirstAudibleDelta(unittest.TestCase):
         self.assertEqual(len(started), 1)
         self.assertGreater(started[0].duration_ms, 400)   # not 2 ms
         self.assertFalse(self.agent.awaiting_first_audio)
+
+    def test_the_voice_reaches_the_speaker(self) -> None:
+        self.agent.reply_mode = "both"
+        block = voice_block()
+        asyncio.run(self.agent._read_events(self.deltas(block)))
+        self.agent.speaker.feed.assert_called_once_with(block)
 
 
 if __name__ == "__main__":
