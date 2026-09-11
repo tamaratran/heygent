@@ -83,6 +83,7 @@ from conductor.observability import (JsonlSink, LoggingSink,
                                      new_trace, start_loop_stall_monitor)
 from conductor.gui_permissions import VOICE_GRANTS, ask_for_missing_grants
 from conductor.projects import DEFAULT_HOME
+from conductor.spoken_text import spoken_text
 
 HERE = Path(__file__).resolve().parent
 MODEL = boss.LIVE_MODEL
@@ -1295,10 +1296,18 @@ class VoiceAgent:
         still being spoken, which is two replies at once out of one
         stream. Waiting for playback to drain was always here; what was
         missing is that nothing made the next caller wait for it.
+
+        Links, file paths and long ids are said in a few words here
+        ("PR 217", "your drafts"); the text as written, links and all,
+        stays in the window it came from.
         """
-        text = re.sub(r"\s+", " ", text or "").strip()
+        written = re.sub(r"\s+", " ", text or "").strip()
+        text = re.sub(r"\s+", " ", spoken_text(text or "")).strip()
         if not text or self.ws is None or self.ws.closed:
             return
+        if text != written:
+            self._emit("voice.text_shortened",
+                       data={"written": written[:300], "said": text[:300]})
         if self.speech_lock.locked():
             self._emit("voice.speech_queued",
                        data={"text": text[:120]})

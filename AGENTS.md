@@ -135,6 +135,10 @@ Reading the result:
 - `boss.update_push_failed` is a worker update that could not be typed
   into the Boss; it is kept, `boss.update_push_retry` tries it again, and
   past the retries it goes with the next flush. Nothing pushed is dropped.
+- `voice.text_shortened` is text handed to the voice with links, file
+  paths or long ids in it: `written` is what the Boss wrote, `said` the
+  short version the voice was given ("PR 217", "your drafts"). The link
+  stays in the Boss window, where `app_web.link_opened` is one clicked.
 - `voice.reply_spoken` is the voice model having said something (filler,
   small talk, a relayed answer). The Boss sees these only through its
   `what_the_voice_said` tool; nothing is typed into its window for them.

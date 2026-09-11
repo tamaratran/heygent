@@ -138,6 +138,8 @@ PAGE = """<!doctype html>
   code.chip { font: .82em ui-monospace, SFMono-Regular, monospace;
     background: var(--faint); border: 1px solid var(--line);
     border-radius: .3rem; padding: .04rem .3rem; }
+  a.link { color: inherit; text-decoration: underline;
+    text-underline-offset: .15em; overflow-wrap: anywhere; cursor: pointer; }
   pre.code { background: var(--faint); border: 1px solid var(--line);
     border-radius: .35rem; padding: .7rem .9rem; margin: .6rem 0;
     overflow-x: auto;
@@ -597,10 +599,36 @@ function spans(box, line) {
       node = document.createElement("b");
       node.textContent = piece.slice(2, -2);
     } else {
-      node = document.createTextNode(piece);
+      links(box, piece);
+      continue;
     }
     box.appendChild(node);
   }
+}
+
+// A link in what the Boss wrote is clickable here, because the voice
+// does not read it out: it says "PR 217" and the link is this one.
+function links(box, text) {
+  const parts = text.split(/(https?:\\/\\/[^\\s<>"'`]+)/);
+  parts.forEach((part, i) => {
+    if (!(i % 2)) {
+      if (part) box.appendChild(document.createTextNode(part));
+      return;
+    }
+    const url = part.replace(/[.,;:!?)\\]}]+$/, "");
+    const a = document.createElement("a");
+    a.className = "link";
+    a.href = url;
+    a.title = url;
+    a.textContent = url;
+    a.onclick = (event) => {
+      event.preventDefault();          // not inside this window
+      post("/open_link", { url: url });
+    };
+    box.appendChild(a);
+    const rest = part.slice(url.length);
+    if (rest) box.appendChild(document.createTextNode(rest));
+  });
 }
 
 function on(msg) {
@@ -1594,6 +1622,8 @@ class CodexWeb:
         self._load_session_names()
         # The live terminal streams behind the page's embedded panes.
         self.terms = TermStreams(self._send_all)
+        # How a clicked link is opened. A seam: tests record instead.
+        self.open_url = _open_url
 
     # -- the stream ------------------------------------------------------
     def push(self, message: dict) -> None:
@@ -2094,6 +2124,22 @@ class CodexWeb:
                    "decision": decision or "accept"})
         return True
 
+    def open_link(self, url: str) -> bool:
+        """A link clicked in the page, opened in the user's browser, in
+        front. Only a web link: the page is not a way to run files."""
+        url = str(url or "").strip()
+        if not re.fullmatch(r"https?://[^\s\x00-\x1f\x7f]+", url, re.I):
+            return False
+        try:
+            self.open_url(url)
+        except Exception:
+            application_log("ui", "app_web.link_open_failed",
+                            "could not open a link from the page",
+                            severity="warning", exc_info=True, url=url[:300])
+            return False
+        application_log("ui", "app_web.link_opened", url[:300])
+        return True
+
     # -- the server --------------------------------------------------------
     async def open(self) -> None:
         """The living half without the server: the turn loop and the
@@ -2159,6 +2205,10 @@ class CodexWeb:
                 await self._respond(
                     writer, "200 OK" if found else "404 Not Found",
                     "application/json", json.dumps({"ok": found}))
+            elif method == "POST" and path == "/open_link":
+                opened = self.open_link(str((body or {}).get("url") or ""))
+                await self._respond(writer, "200 OK", "application/json",
+                                    json.dumps({"ok": opened}))
             elif method == "POST" and path == "/interrupt":
                 try:
                     await self.app.interrupt()
@@ -2923,6 +2973,12 @@ class TermStreams:
             await self.detach(task_id)
 
 
+def _open_url(url: str) -> None:
+    """The user's default browser, brought to the front (no -g)."""
+    subprocess.Popen(["open", url], stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL)
+
+
 def _cmux_in_front() -> bool:
     front = subprocess.run(["lsappinfo", "front"], capture_output=True,
                            text=True).stdout.strip()
@@ -3087,6 +3143,8 @@ class WindowBridge:
         if path == "/answer":
             return {"ok": web.answer(str(body.get("item_id") or ""),
                                      str(body.get("decision") or ""))}
+        if path == "/open_link":
+            return {"ok": web.open_link(str(body.get("url") or ""))}
         if path == "/interrupt":
             try:
                 await web.app.interrupt()
