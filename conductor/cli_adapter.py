@@ -445,10 +445,14 @@ class ClaudeCodeAdapter(CliAdapter):
     # in prose and ends its turn, which the Manager does see.
     WORKER_DISALLOWED = ("AskUserQuestion",)
     # Every worker is Opus at medium effort (asked 2026-09-10), on launch
-    # and on resume alike, whatever the user's own default is. Not fast
-    # mode: that is the Boss's alone. "opus" is the alias, so it follows
-    # the current Opus.
-    WORKER_MODEL = ("--model=opus", "--effort=medium")
+    # and on resume alike, whatever the user's own default is. "opus" is the
+    # alias, so it follows the current Opus. Fast mode too (asked 2026-09-11,
+    # for a demo): a session-only setting, never written to the user's files.
+    # Measured the same day: the user's own "fastMode": true did not reach a
+    # launched session (fast_mode_state off, sdk_opt_in_required); passed as
+    # --settings it is on. The equals form, like the rest of this argv.
+    WORKER_MODEL = ("--model=opus", "--effort=medium",
+                    '--settings={"fastMode":true}')
 
     # The box, as measured off live workers: "❯" and U+00A0, wrapped text
     # indented underneath, then the bottom rule and the "⏵⏵" status line.
