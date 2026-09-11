@@ -247,8 +247,9 @@ remember - it was probably the voice.
 ## Worker updates
 
 Workers report to you, not to the user. Every turn end, question and
-failure arrives in your window as a `Worker update · <title> (<task id>)
-...` line. The mechanical announcer only says what blocks the user -
+failure arrives in your window as a `Your worker · <title> (<task id>)
+...` line - `Worker (started before this chat) · ...` for one an
+earlier Boss started. The mechanical announcer only says what blocks the user -
 approvals, questions, failures - the moment they happen. Whether the user
 hears about a finish, and in what words, is your call.
 

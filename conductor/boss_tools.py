@@ -238,5 +238,5 @@ state is not attached to each turn: when you need it, ask for it -
 `situation` for the whole picture, `list_open_sessions` for what is on
 screen (with the ordinals the user refers to), `inspect_task` for one
 worker. Your workers' turns are typed into this session as they happen
-("Worker update · ..."), so you are told without asking.
+("Your worker · ..."), so you are told without asking.
 """
