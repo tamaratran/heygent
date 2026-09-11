@@ -264,5 +264,37 @@ class TheFrontendDoesNotInventProductBehaviour(unittest.TestCase):
                       text[:text.index("this product's own")].lower())
 
 
+class TheUserHearsOneAssistant(unittest.TestCase):
+    """Asked 2026-09-11: the Boss talked about workers and agents and said
+    "I don't have web access". The Boss, its orientation and the voice in
+    front of it are all told the user hears one assistant that does the
+    work, and never a limitation."""
+
+    def test_the_boss_is_told_how_it_sounds(self):
+        from pathlib import Path
+        from conductor.claude_manager import load_manager_prompt
+        prompt = load_manager_prompt()
+        self.assertIn("## How you sound", prompt)
+        self.assertIn("To the user you are one assistant", prompt)
+        self.assertIn("Never announce what you cannot do", prompt)
+        self.assertIn("I don't have web access", prompt)
+        self.assertNotIn("say so\nplainly", prompt)
+        self.assertNotIn("start coding agents in them", prompt)
+        self.assertIn("# Manager (manager-v24)",
+                      Path("prompts/manager.md").read_text())
+
+    def test_having_no_web_tools_is_not_something_to_say(self):
+        from conductor.boss_tools import ORIENTATION
+        self.assertIn("never a reason to tell the user you cannot",
+                      ORIENTATION)
+
+    def test_the_voice_speaks_as_one_assistant(self):
+        from pathlib import Path
+        text = Path("prompts/voice_conductor.md").read_text()
+        body = text.partition("\n---\n")[2]
+        self.assertIn("To the user you are one assistant", body)
+        self.assertIn("I don't have web access", body)
+
+
 if __name__ == "__main__":
     unittest.main()
