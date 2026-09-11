@@ -10,6 +10,7 @@ from __future__ import annotations
 import inspect
 import re
 import tempfile
+from unittest import mock
 import unittest
 from pathlib import Path
 
@@ -29,6 +30,20 @@ class TheHelperRunsOnARuntimeWeControl(unittest.TestCase):
         self.assertIn("--with \"mcp>=2,<3\"", text)
         self.assertNotIn("/usr/bin/python", text)
         self.assertNotIn("python3 ", text.split("run", 1)[0])
+
+    def test_in_the_app_the_launcher_is_the_apps_own_executable(self):
+        exe = "/Applications/Voice Agent.app/Contents/MacOS/Voice Agent"
+        text = launcher_text(None, Path("/A.app/Contents/Resources/app"),
+                             python=exe)
+        self.assertIn(f'exec "{exe}" -c "import sys;', text)
+        self.assertNotIn("--python-preference", text)
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("conductor.app_bundle.inside_bundle",
+                        return_value=True), \
+             mock.patch.object(boss_helper.sys, "executable", exe), \
+             mock.patch.object(boss_helper, "find_uv", return_value=None):
+            path = ensure_helper(tmp, "/repo")
+            self.assertIn(f'"{exe}"', path.read_text())
 
     def test_the_launcher_pins_our_code_by_absolute_path(self):
         text = launcher_text("/uv", Path("/repo"))

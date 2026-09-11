@@ -1,0 +1,251 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Set up</title>
+<style>
+  :root { color-scheme: light dark;
+    --bg: #ffffff; --fg: #0d0d0d; --muted: #737373;
+    --faint: #f4f4f4; --line: #e6e6e6; --ink: #0d0d0d;
+    --ink-fg: #ffffff; --red: #c4320a; --amber: #b54708;
+    --green: #067647; --clay: #c15f3c; }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg: #1e1e1e; --fg: #ececec; --muted: #9a9a9a;
+    --faint: #2a2a2a; --line: #383838; --ink: #ececec;
+    --ink-fg: #1e1e1e; --red: #f97066; --amber: #f7b155;
+    --green: #47cd89; --clay: #d97757; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    -webkit-font-smoothing: antialiased; -webkit-user-select: none;
+    cursor: default; }
+  main { max-width: 34rem; margin: 0 auto; padding: 2.2rem 1.4rem 6rem; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 .35rem; }
+  h1 span { color: var(--clay); }
+  .lede { color: var(--muted); margin: 0 0 1.8rem; }
+  section { border-top: 1px solid var(--line); padding: 1.1rem 0; }
+  h2 { font-size: .8rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); margin: 0 0 .7rem; }
+  .row { display: flex; align-items: center; gap: .8rem; padding: .45rem 0; }
+  .row .text { flex: 1; min-width: 0; }
+  .row .name { font-weight: 600; }
+  .row .why { color: var(--muted); font-size: .92em; }
+  .mark { width: 1.1rem; flex: none; text-align: center; font-weight: 700; }
+  .granted .mark { color: var(--green); }
+  .denied .mark { color: var(--amber); }
+  .missing .mark, .unknown .mark { color: var(--muted); }
+  .optional { color: var(--muted); font-weight: 400; font-size: .85em; }
+  button { font: inherit; font-weight: 600; border-radius: .3rem;
+    padding: .38rem .8rem; border: 1px solid var(--line);
+    background: var(--faint); color: var(--fg); cursor: pointer;
+    white-space: nowrap; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--ink); color: var(--ink-fg);
+    border-color: var(--ink); }
+  button:disabled { opacity: .45; cursor: default; }
+  .key { display: flex; gap: .5rem; }
+  input { flex: 1; min-width: 0; font: inherit; padding: .38rem .55rem;
+    border: 1px solid var(--line); border-radius: .3rem;
+    background: var(--bg); color: var(--fg); -webkit-user-select: text; }
+  input:focus { outline: 2px solid var(--clay); outline-offset: -1px; }
+  .note { margin: .5rem 0 0; font-size: .92em; min-height: 1.3em; }
+  .note.ok { color: var(--green); }
+  .note.bad { color: var(--red); }
+  .note.warn { color: var(--amber); }
+  a { color: inherit; text-decoration-color: var(--muted); }
+  .saved { display: flex; align-items: center; gap: .8rem; }
+  .saved .text { flex: 1; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--bg); border-top: 1px solid var(--line); }
+  footer .inner { max-width: 34rem; margin: 0 auto; padding: .8rem 1.4rem;
+    display: flex; align-items: center; gap: 1rem; }
+  footer .status { flex: 1; color: var(--muted); font-size: .92em; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Set up <span id="app-name">Voice Agent</span></h1>
+  <p class="lede">Hold <b>Fn</b>, talk, and it runs coding agents for you.
+    Three things first: a key for the voice, permission to hear you,
+    and your Claude account for the agents.</p>
+
+  <section id="key-section">
+    <h2>1 · OpenAI key</h2>
+    <div id="key-entry">
+      <div class="key">
+        <input id="key" type="password" placeholder="sk-…" spellcheck="false"
+               autocomplete="off" aria-label="OpenAI API key">
+        <button id="save-key" class="primary">Check &amp; save</button>
+      </div>
+      <p class="note" id="key-note">The voice runs on OpenAI's gpt-live-1.
+        Make a key at <a href="#" data-open="keys">platform.openai.com</a>.</p>
+      <button id="save-anyway" hidden>Save without checking</button>
+    </div>
+    <div id="key-saved" class="saved" hidden>
+      <span class="mark" style="color:var(--green)">✓</span>
+      <div class="text">Key saved <span id="key-hint" class="why"></span></div>
+      <button id="change-key">Change</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · Permissions</h2>
+    <div id="grants"></div>
+    <p class="note warn" id="grant-note" hidden>Input Monitoring reaches
+      only new processes: it will work once setup finishes, even if it
+      still shows as missing here.</p>
+  </section>
+
+  <section>
+    <h2>3 · Claude Code</h2>
+    <div class="row" id="claude-row">
+      <span class="mark" id="claude-mark">…</span>
+      <div class="text">
+        <div class="name" id="claude-title">Checking…</div>
+        <div class="why" id="claude-why"></div>
+      </div>
+      <button id="claude-login" hidden>Sign in</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="inner">
+    <div class="status" id="footer-status"></div>
+    <button id="start" class="primary" disabled>Start</button>
+  </div>
+</footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const send = (body) => {
+    const bridge = window.webkit && window.webkit.messageHandlers
+      && window.webkit.messageHandlers.setup;
+    if (bridge) bridge.postMessage(body);
+    else (window.sent = window.sent || []).push(body);   // a plain browser
+  };
+  const MARKS = { granted: "✓", denied: "!", missing: "○", unknown: "○" };
+  let last = null;
+
+  function grantRow(grant) {
+    const row = document.createElement("div");
+    row.className = "row " + grant.status;
+    row.dataset.grant = grant.id;
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    mark.textContent = MARKS[grant.status] || "○";
+    const text = document.createElement("div");
+    text.className = "text";
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = grant.label + " ";
+    if (!grant.required) {
+      const opt = document.createElement("span");
+      opt.className = "optional";
+      opt.textContent = "optional";
+      name.appendChild(opt);
+    }
+    const why = document.createElement("div");
+    why.className = "why";
+    why.textContent = grant.purpose;
+    text.append(name, why);
+    row.append(mark, text);
+    if (grant.status !== "granted") {
+      const button = document.createElement("button");
+      const asked = last && last.asked && last.asked.includes(grant.id);
+      button.textContent = grant.status === "denied" || asked ? "Open Settings" : "Allow";
+      button.onclick = () => send({ action: "grant", grant: grant.id });
+      row.appendChild(button);
+    }
+    return row;
+  }
+
+  window.render = function (state) {
+    last = state;
+    $("app-name").textContent = state.app;
+    document.title = "Set up " + state.app;
+
+    const key = state.key;
+    if (key.ok === true) document.body.dataset.changingKey = "";
+    const entering = !key.saved || document.body.dataset.changingKey === "1";
+    $("key-entry").hidden = !entering;
+    $("key-saved").hidden = entering;
+    $("key-hint").textContent = key.hint ? "(" + key.hint + ")" : "";
+    if (key.message) {
+      const note = $("key-note");
+      note.textContent = key.message;
+      note.className = "note " + (key.ok ? "ok" : key.ok === false ? "bad" : "warn");
+    }
+    $("save-anyway").hidden = !state.key.unreached;
+    $("save-key").disabled = !!state.key.checking;
+    if (state.key.checking) $("save-key").textContent = "Checking…";
+    else $("save-key").textContent = "Check & save";
+
+    const list = $("grants");
+    list.replaceChildren(...state.grants.map(grantRow));
+    const im = state.grants.find((g) => g.id === "input_monitoring");
+    $("grant-note").hidden = !(im && im.status !== "granted" && state.asked
+      && state.asked.includes("input_monitoring"));
+
+    const c = state.claude;
+    const row = $("claude-row");
+    if (!c.path) {
+      row.className = "row missing";
+      $("claude-mark").textContent = "!";
+      $("claude-title").textContent = "Claude Code not found";
+      $("claude-why").textContent = "The agents are Claude Code sessions.";
+    } else if (c.signed_in === true) {
+      row.className = "row granted";
+      $("claude-mark").textContent = "✓";
+      $("claude-title").textContent = "Signed in" + (c.method ? " (" + c.method + ")" : "");
+      $("claude-why").textContent = c.bundled ? "Using the Claude Code built into the app."
+                                              : "Using " + c.path;
+    } else if (c.signed_in === false) {
+      row.className = "row missing";
+      $("claude-mark").textContent = "!";
+      $("claude-title").textContent = c.signing_in ? "Finish signing in in your browser…"
+                                                   : "Not signed in";
+      $("claude-why").textContent = "The agents run on your Claude account.";
+    } else {
+      row.className = "row unknown";
+      $("claude-mark").textContent = "○";
+      $("claude-title").textContent = "Couldn't tell whether Claude Code is signed in";
+      $("claude-why").textContent = c.path;
+    }
+    $("claude-login").hidden = !(c.path && c.signed_in !== true);
+    $("claude-login").disabled = !!c.signing_in;
+
+    const blocking = state.blocking;
+    $("start").disabled = blocking.length > 0;
+    const words = { key: "an OpenAI key", claude: "Claude Code signed in" };
+    let status = "";
+    if (blocking.length) status = "Needs " + blocking.map((b) => words[b]).join(" and ") + ".";
+    else if (state.missing_required.length) status = "You can start now; the voice needs the missing permissions to hear you.";
+    else status = "Ready.";
+    $("footer-status").textContent = status;
+  };
+
+  $("save-key").onclick = () => {
+    const key = $("key").value.trim();
+    if (!key) { $("key").focus(); return; }
+    send({ action: "check_key", key });
+  };
+  $("key").addEventListener("keydown", (e) => { if (e.key === "Enter") $("save-key").click(); });
+  $("save-anyway").onclick = () => send({ action: "save_key", key: $("key").value.trim() });
+  $("change-key").onclick = () => {
+    document.body.dataset.changingKey = "1";
+    send({ action: "change_key" });
+    $("key").focus();
+  };
+  $("claude-login").onclick = () => send({ action: "claude_login" });
+  $("start").onclick = () => send({ action: "start" });
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("[data-open]");
+    if (link) { e.preventDefault(); send({ action: "open", what: link.dataset.open }); }
+  });
+  send({ action: "ready" });
+</script>
+</body>
+</html>

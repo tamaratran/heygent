@@ -179,6 +179,12 @@ class NamingTheApp(unittest.TestCase):
         self.assertEqual(this_app({"__CFBundleIdentifier": "com.apple.Terminal"}),
                          "Terminal")
 
+    def test_opened_as_the_app_it_is_the_app(self) -> None:
+        from conductor import app_bundle
+        self.assertEqual(this_app({"__CFBundleIdentifier": app_bundle.BUNDLE_ID,
+                                   "TERM_PROGRAM": "ghostty"}),
+                         app_bundle.APP_NAME)
+
     def test_term_program_stands_in_for_an_unknown_bundle(self) -> None:
         self.assertEqual(this_app({"TERM_PROGRAM": "iTerm.app"}), "iTerm2")
         self.assertEqual(this_app({"__CFBundleIdentifier": "org.example.NewTerm",

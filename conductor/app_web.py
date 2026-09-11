@@ -3183,8 +3183,10 @@ class WindowBridge:
         assets.mkdir(parents=True, exist_ok=True)
         for name in ASSET_FILES:
             shutil.copyfile(ASSETS / name, assets / name)
+        from . import app_bundle
         self.process = await asyncio.create_subprocess_exec(
-            uv, "run", "--script", str(script), "--stdio",
+            *app_bundle.script_argv(script, [uv, "run", "--script"]),
+            "--stdio",
             "--page", str(page),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

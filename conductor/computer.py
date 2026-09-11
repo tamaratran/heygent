@@ -1082,9 +1082,15 @@ def cli_command() -> str:
     bindings and a worker's `python3` - Homebrew's, Xcode's, whatever the
     shell finds - never has to carry them. Without uv the plain
     interpreter is all there is, and `check` will say what is missing.
+    In the app there is no uv and nothing to resolve: its own executable
+    runs the script, with the bindings it carries.
     """
+    import shlex
+    from conductor import app_bundle
     from conductor.boss_helper import PYTHON_PIN, find_uv
-    script = Path(__file__).resolve()
+    script = shlex.quote(str(Path(__file__).resolve()))
+    if app_bundle.inside_bundle():
+        return f"{shlex.quote(sys.executable)} {script}"
     uv = find_uv()
     if not uv:
         return f"python3 {script}"

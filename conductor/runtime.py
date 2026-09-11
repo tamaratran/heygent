@@ -148,7 +148,9 @@ class ApprovalPolicy:
         index = command.find(marker)
         if index < 0:
             return None
-        rest = command[index + len(marker):].strip()
+        # A quoted path ("/Applications/Voice Agent.app/...computer.py")
+        # leaves its closing quote between the path and the verb.
+        rest = command[index + len(marker):].lstrip("'\"").strip()
         verb = rest.split(" ", 1)[0] if rest else ""
         return "allow" if verb in self._COMPUTER_SAFE_VERBS else "ask"
 

@@ -74,6 +74,7 @@ import numpy as np
 import sounddevice as sd
 
 import boss
+from conductor import app_bundle
 from conductor.manager import VERBATIM_FOOTER, VERBATIM_HEADER
 from conductor.observability import (JsonlSink, LoggingSink,
                                      ObservabilityBus, ObservabilityEvent,
@@ -1637,7 +1638,7 @@ class HotkeyListener:
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
         self.proc = subprocess.Popen(
-            [*self.spawn, str(HERE / "hotkey.py")],
+            app_bundle.script_argv(HERE / "hotkey.py", self.spawn),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         threading.Thread(target=self._read_events, name="hotkey",
                          daemon=True).start()
@@ -1761,7 +1762,8 @@ async def main() -> int:
     spawn = [uv, "run", "--python-preference", "only-managed", "--python", "3.13"]
     # stdout is the overlay's NDJSON protocol; only stderr is captured.
     overlay = await asyncio.create_subprocess_exec(
-        *spawn, str(HERE / "overlay.py"), stdin=asyncio.subprocess.PIPE,
+        *app_bundle.script_argv(HERE / "overlay.py", spawn),
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     ui = Ui(overlay)
     stderr_readers = [asyncio.create_task(

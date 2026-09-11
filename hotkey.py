@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pyobjc-framework-Quartz>=10,<12"]
+# dependencies = ["pyobjc-framework-Quartz>=10,<13"]
 # ///
 
 """Watch the Fn key and print its state as NDJSON.
