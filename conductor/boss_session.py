@@ -83,6 +83,10 @@ class BossSession:
     id: str
     conversation_id: str
     provider_session_id: str | None = None
+    # Which CLI the provider session belongs to ("claude-code", "codex",
+    # ...). Empty on records from before the Boss could be hosted by
+    # anything but Claude Code, which is what they were.
+    provider: str = ""
     status: str = "starting"
     title: str = "New voice chat"
     child_subagent_ids: list[str] = field(default_factory=list)

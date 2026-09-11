@@ -318,7 +318,8 @@ def chosen_surface(override: str | None = None) -> str:
     return override or getattr(boss, "WORKER_SURFACE", "cmux")
 
 
-def build_boss(runtime, home: Path, mode: str, transport: str = "stdio"):
+def build_boss(runtime, home: Path, mode: str, transport: str = "stdio",
+               provider: str = "claude-code"):
     """The Boss: a visible session in the worker surface, or the invisible
     SDK call it used to be.
 
@@ -331,16 +332,33 @@ def build_boss(runtime, home: Path, mode: str, transport: str = "stdio"):
     transport is how the visible Boss reaches its tools: "http" is the
     conductor's own loopback MCP endpoint (nothing else runs); "stdio" is
     boss-mcp, the packaged helper, over the bridge socket.
+
+    provider is which CLI hosts the visible Boss: "claude-code" (the
+    default), or any provider the conductor has a runtime for ("codex",
+    "gemini", ...). That runtime's adapter writes the Boss's command line
+    and its MCP configuration; the session, its tools, its timeline and
+    the worker updates typed into it are the same whichever CLI it is.
     """
     if mode != "visible":
+        if provider != "claude-code":
+            raise SystemExit(f"--boss-provider {provider} needs --boss visible: "
+                             "the headless Boss is the Claude SDK")
         return ClaudeManagerBackend()
-    local = getattr(runtime, "runtimes", {}).get("local", runtime)
+    runtimes = getattr(runtime, "runtimes", {})
+    if provider == "claude-code":
+        hosting = runtimes.get("local", runtime)
+    elif provider in runtimes:
+        hosting = runtimes[provider]
+    else:
+        others = [n for n in runtimes if n not in ("local", "cloud")]
+        raise SystemExit(f"--boss-provider {provider}: no such CLI is "
+                         f"installed here (have: {', '.join(others) or 'none'})")
     return PtyManagerBackend(
-        local, home, home / "boss" / "tools.sock",
+        hosting, home, home / "boss" / "tools.sock",
         python=sys.executable, repo_root=HERE,
         turn_timeout=getattr(boss_mod, "MANAGER_TURN_TIMEOUT_S", 300.0),
         store=BossSessionStore(home), transport=transport,
-        session_settings=toast_hook(home))
+        session_settings=toast_hook(home) if provider == "claude-code" else {})
 
 
 def toast_python() -> str | None:
@@ -394,7 +412,8 @@ def build_conductor(home: Path,
                     worker_surface: str | None = None,
                     boss_mode: str = "visible",
                     boss_transport: str = "stdio",
-                    embedded_terminals: bool = False) -> GlobalConductor:
+                    embedded_terminals: bool = False,
+                    boss_provider: str = "claude-code") -> GlobalConductor:
     """Workers are always PTY-hosted: the window IS the live session, so it
     can be watched and typed into while the Conductor supervises it.
 
@@ -495,7 +514,7 @@ def build_conductor(home: Path,
                             surface_preference=preference,
                             idle_retire_s=getattr(boss, "IDLE_RETIRE_S", 0.0),
                             manager=build_boss(runtime, home, boss_mode,
-                                               boss_transport))
+                                               boss_transport, boss_provider))
     if isinstance(built.manager, PtyManagerBackend):
         built.boss_store = built.manager.store
     return built
@@ -607,6 +626,11 @@ async def main() -> int:
                         help="how the visible Boss reaches its tools: http "
                              "(the conductor's own loopback MCP endpoint) "
                              "or stdio (boss-mcp, the packaged helper)")
+    parser.add_argument("--boss-provider", default="claude-code",
+                        help="which CLI hosts the visible Boss: claude-code "
+                             "(the default), codex, gemini, cursor, devin, or "
+                             "a provider from providers.json - it must be "
+                             "installed here")
     parser.add_argument("--boss-ui", choices=("window", "none"),
                         default="window",
                         help="the Boss window: window (the voice-agent "
@@ -709,6 +733,7 @@ async def main() -> int:
                                 args.worker_location, surface,
                                 boss_mode=args.boss,
                                 boss_transport=args.boss_transport,
+                                boss_provider=args.boss_provider,
                                 embedded_terminals=args.boss_ui == "window"
                                 and surface != "cmux")
     from conductor import turn_toast

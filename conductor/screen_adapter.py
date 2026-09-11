@@ -28,10 +28,21 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from .agent_events import AgentEvent
-from .cli_adapter import CliAdapter
+from .cli_adapter import BossSpec, CliAdapter
+from .observability import application_log
+
+
+def write_private_json(path: Path, data: dict) -> Path:
+    """A per-session config file that may carry the Boss's credential:
+    written under the Boss's own directory, readable by its owner only."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+    path.chmod(0o600)
+    return path
 
 
 class ScreenAdapter(CliAdapter):
@@ -51,7 +62,7 @@ class ScreenAdapter(CliAdapter):
     # Box-drawing furniture a TUI puts around its content. Stripped
     # from both ends of every line before anything is judged, so a
     # prompt inside a box ("│ > ") is still a prompt.
-    _BOX = "│┃║╭╰╮╯─═┌└┐┘ \t"
+    _BOX = "│┃║╭╰╮╯─═┌└┐┘▄▀ \t"
 
     @classmethod
     def clean(cls, line: str) -> str:
@@ -106,6 +117,54 @@ class ScreenAdapter(CliAdapter):
         return None                 # the screen is the transcript
 
     # -- the screen as a transcript ---------------------------------------
+    # How many typed messages are remembered, to be told from the reply
+    # when the CLI draws them back; and how short a screen line may be
+    # and still be taken for a wrapped piece of one.
+    SENT_KEPT = 4
+    ECHO_MIN_CHARS = 12
+
+    @staticmethod
+    def _key(text: str) -> str:
+        return " ".join(text.split()).casefold()
+
+    def sent(self, message: str, state: dict) -> list[AgentEvent]:
+        """The user line, as the transcript would have written it; and
+        the words are kept, so the CLI drawing them back is not read as
+        part of its answer."""
+        text = " ".join(message.split())
+        kept = state.setdefault("screen_sent", [])
+        kept.append(self._key(text))
+        del kept[:-self.SENT_KEPT]
+        return [AgentEvent(type="progress", summary=f"> {text[:200]}",
+                           detail={"source": "user_message"})]
+
+    def is_echo(self, line: str, state: dict, after_echo: bool = False) -> bool:
+        """Is this screen line the CLI showing what was typed into it -
+        whole, or one wrapped piece of it? A short piece counts only
+        right under another ("line" alone is a word, not the message)."""
+        key = self._key(line).lstrip("›>❯→ ")
+        if not key:
+            return False
+        for sent in state.get("screen_sent", ()):
+            if key == sent or sent in key:
+                return True
+            if (after_echo or len(key) >= self.ECHO_MIN_CHARS) and key in sent:
+                return True
+        return False
+
+    def said(self, lines: list[str], state: dict) -> list[str]:
+        """The lines that are the CLI's own words: not its prompt, not
+        what was typed into it drawn back."""
+        out, echo = [], False
+        for line in lines:
+            if self.is_prompt(line):
+                echo = False
+                continue
+            echo = self.is_echo(line, state, after_echo=echo)
+            if not echo:
+                out.append(line)
+        return out
+
     def screen_events(self, screen: str, state: dict) -> list[AgentEvent]:
         """One poll of the screen -> zero or more AgentEvents. `state`
         is the session's, kept between polls."""
@@ -122,7 +181,7 @@ class ScreenAdapter(CliAdapter):
                 if fresh and not state.get("screen_busy"):
                     state["screen_busy"] = True
                     state["screen_since"] = list(last)
-                said = [ln for ln in fresh if not self.is_prompt(ln)]
+                said = self.said(fresh, state)
                 if said:
                     events.append(AgentEvent(type="progress",
                                              summary=said[-1][:300]))
@@ -133,8 +192,7 @@ class ScreenAdapter(CliAdapter):
             # Quiet, prompt back: the turn is over. Its text is what
             # appeared since it started, without the prompt itself.
             before = state.get("screen_since") or []
-            said = [ln for ln in body
-                    if ln not in before and not self.is_prompt(ln)]
+            said = self.said([ln for ln in body if ln not in before], state)
             state["screen_busy"] = False
             state.pop("screen_since", None)
             events.append(AgentEvent(type="completed",
@@ -151,17 +209,47 @@ class GeminiAdapter(ScreenAdapter):
 
     name = "gemini"
     display = "Gemini CLI"
+    login_command = "gemini"        # its first run asks how to sign in
     binary_name = "gemini"
     PROMPT = re.compile(r"(Type your message|@path/to/file|^>\s*$)")
-    # The box "│ > text │" inside its frame, closed by "╰───╯". Like the
-    # ready prompt, from Gemini's source rather than a signed-in screen.
-    PROMPT_MARKS = (">",)
-    BOX_ENDS = ("╰", "─")
+    # The input box, measured signed in on 0.59.0: " * text" between a
+    # "▄▄▄" and a "▀▀▀" rule, at the bottom of the screen; a message it
+    # has taken is drawn back into the history above as " > text"
+    # between the same rules. Reading ">" alone found that echo and
+    # never the box, so every push "stayed in the input box", got its
+    # Enter again, and was typed again (2026-09-11, boss.update_push_failed
+    # x3 for one finish). ">" stays for the older "│ > text │" box.
+    PROMPT_MARKS = ("*", ">")
+    BOX_ENDS = ("╰", "─", "▀", "▄")
     PLACEHOLDERS = ("type your message",)
     SUGGESTS_IN_BOX = True
     BUSY = re.compile(r"esc to cancel", re.I)
     _APPROVAL = ("allow execution", "apply this change", "allow once",
                  "yes, allow", "do you want to proceed")
+    # Its own status lines, measured 0.59.0: the spinner, the footer
+    # rows under the box, the shortcut hint, the mode/skills row.
+    CHROME_LINES = re.compile(
+        r"^(.*\(esc to cancel, \d+s\)|\? for shortcuts|YOLO Ctrl\+Y.*|"
+        r"workspace \(/directory\).*|~/.*|/Users/.*|\d+ GEMINI\.md file.*|"
+        r"Gemini CLI v[\d.]+|Authenticated with .*)$")
+    # Gemini marks what the model says with "✦"; a tool call is a "✓ name
+    # (server) {args}" card with the tool's whole result printed under
+    # it. Measured 2026-09-11 (Gemini Boss, conductor-47755): the
+    # result of inspect_task is the task's JSON, pages of it, and it
+    # went to the user as the Boss's reply beside the one "✦" line.
+    SAYS = "✦"
+
+    def said(self, lines: list[str], state: dict) -> list[str]:
+        """What the model said: the last "✦" paragraph and what follows
+        it (its wrapped lines, a list it drew). A turn with no "✦" on
+        screen is read as any other CLI's."""
+        lines = super().said(lines, state)
+        starts = [i for i, ln in enumerate(lines) if ln.startswith(self.SAYS)]
+        if not starts:
+            return lines
+        out = lines[starts[-1]:]
+        out[0] = out[0][len(self.SAYS):].strip()
+        return [ln for ln in out if ln]
 
     # Our "auto": edits proceed, commands ask - the asking is what the
     # card and the Boss see as an approval. "bypassPermissions" maps to
@@ -183,12 +271,26 @@ class GeminiAdapter(ScreenAdapter):
             if permission_mode else []
         return [self.binary, *mode, "--resume", "latest"]
 
+    _DIALOGS = (("trust", ("trust folder", "trust parent folder")),
+                ("auth", ("how would you like to authenticate",)))
+
     def startup_dialog(self, screen: str) -> str | None:
+        """A dialog is only the one on screen while nothing follows it.
+        Gemini answers the trust choice by restarting in place, and with
+        the alternate screen off the dialog stays in the pane above the
+        new banner and prompt: measured 2026-09-11 (task_947be3d1), a
+        worker that had answered its question was still reported at its
+        trust dialog two minutes later, its turn end never read and an
+        Enter typed at it three times a second."""
         low = screen.lower()
-        if "trust folder" in low or "trust parent folder" in low:
-            return "trust"
-        if "how would you like to authenticate" in low:
-            return "auth"
+        for kind, marks in self._DIALOGS:
+            at = max(low.rfind(mark) for mark in marks)
+            if at < 0:
+                continue
+            after = screen[at:].split("\n", 1)[1] if "\n" in screen[at:] \
+                else ""
+            if not super().prompt_ready(after):
+                return kind
         return None
 
     def approval_prompt(self, screen: str) -> str | None:
@@ -203,6 +305,69 @@ class GeminiAdapter(ScreenAdapter):
 
     def process_needle(self, session_id: str | None) -> str | None:
         return None                 # not on its command line; the checkout finds it
+
+    # -- hosting the Boss ---------------------------------------------------------
+    # Gemini reads GEMINI.md from its cwd; its MCP servers and tool
+    # exclusions come from .gemini/settings.json there. The Boss's
+    # directory is its own project, so both are this session's alone.
+    BOSS_INSTRUCTIONS = ("GEMINI.md",)
+    PINS_SESSION_ID = True
+    # Gemini's own switch for trusting the workspace it starts in.
+    TRUST_ENV = "GEMINI_CLI_TRUST_WORKSPACE"
+    # An MCP tool is mcp_<server>_<tool> to the model (measured 0.59.0).
+    BOSS_TOOL_PREFIX = "mcp_boss_"
+    # Gemini's built-in coding tools, off: it conducts through the boss
+    # server. Names from Gemini CLI's tool registry.
+    BOSS_EXCLUDED_TOOLS = ("run_shell_command", "write_file", "replace",
+                           "edit", "read_file", "read_many_files", "glob",
+                           "grep_search", "search_file_content", "list_directory",
+                           "web_fetch", "google_web_search", "save_memory")
+
+    def boss_argv(self, spec: BossSpec) -> list[str] | None:
+        entry = spec.stdio_entry(trust=True)     # its tools run unasked
+        if "url" in entry:
+            entry = {"httpUrl": entry.pop("url"), **entry}
+        write_private_json(spec.boss_dir / ".gemini" / "settings.json", {
+            "mcpServers": {spec.server: entry},
+            "tools": {"exclude": list(self.BOSS_EXCLUDED_TOOLS)},
+        })
+        # The Boss's own directory is trusted: an untrusted workspace
+        # loads no .gemini/settings.json, and the Boss would start with
+        # Gemini's coding tools and none of its own (measured 0.59.0:
+        # `--skip-trust` sets GEMINI_CLI_TRUST_WORKSPACE only once the
+        # arguments are parsed, after the settings were read, so it
+        # skips the dialog but not the suppression; the variable set
+        # before launch does both). yolo: nothing in its window asks
+        # the user anything; the boss tools are the only ones.
+        argv = ["env", f"{self.TRUST_ENV}=true",
+                self.binary, "--approval-mode", "yolo",
+                "--allowed-mcp-server-names", spec.server]
+        if spec.model:
+            argv += ["-m", spec.model]
+        if spec.resume:
+            # Gemini resumes by index or "latest", never by the uuid it
+            # was given; the newest session in this directory is the Boss.
+            argv += ["--resume", "latest"]
+        else:
+            argv += ["--session-id", spec.session_id]
+        return argv
+
+    def boss_resumable(self, boss_dir: Path, session_id: str) -> bool:
+        try:
+            listing = subprocess.run(
+                [self.binary, "--list-sessions"], cwd=str(boss_dir),
+                capture_output=True, text=True, timeout=30, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            application_log("runtime", "gemini.list_sessions_failed",
+                            "gemini --list-sessions did not answer; the Boss "
+                            "starts a new session", severity="warning",
+                            exc_info=True)
+            return False
+        return session_id[:8] in listing.stdout or \
+            session_id in listing.stdout
+
+    def boss_needle(self, spec: BossSpec) -> str | None:
+        return f"--allowed-mcp-server-names {spec.server}"
 
 
 class CursorAdapter(ScreenAdapter):
@@ -220,6 +385,7 @@ class CursorAdapter(ScreenAdapter):
 
     name = "cursor"
     display = "Cursor"
+    login_command = "cursor-agent login"
     binary_name = "cursor-agent"
     # Measured signed in (2026-08-30): the composer is an arrow prompt,
     # "→ Plan, search, build anything" when empty; a command approval
@@ -285,12 +451,36 @@ class CursorAdapter(ScreenAdapter):
 
     def startup_dialog(self, screen: str) -> str | None:
         low = screen.lower()
-        if "press any key to log in" in low or "cursor-agent login" in low:
+        # Measured 2026-09-11, signed out: it opens the browser itself
+        # and shows "Signing in with the browser..." until someone does.
+        if "press any key to log in" in low or "cursor-agent login" in low \
+                or "signing in with the browser" in low:
             return "auth"
         if "trust" in low and ("workspace" in low or "folder" in low
                                or "directory" in low):
             return "trust"
         return None
+
+    # -- hosting the Boss ---------------------------------------------------------
+    # Cursor's agent reads AGENTS.md from its cwd and MCP servers from
+    # .cursor/mcp.json there (the same file the IDE uses).
+    BOSS_INSTRUCTIONS = ("AGENTS.md",)
+
+    def boss_argv(self, spec: BossSpec) -> list[str] | None:
+        write_private_json(spec.boss_dir / ".cursor" / "mcp.json",
+                           {"mcpServers": {spec.server: spec.stdio_entry()}})
+        # --force: the Boss's window is nobody's to answer, and its only
+        # tools are the boss server's. Its instructions keep it off the
+        # checkout; Cursor has no per-tool deny list to enforce that.
+        argv = [self.binary, "--trust", "--force"]
+        if spec.model:
+            argv += ["--model", spec.model]
+        if spec.resume:
+            argv += ["--resume", spec.session_id]
+        return argv
+
+    def boss_needle(self, spec: BossSpec) -> str | None:
+        return None       # `cursor-agent --trust --force` names nothing of ours
 
 
 class _BusyAwareScreenAdapter(ScreenAdapter):
@@ -334,6 +524,7 @@ class DevinAdapter(_BusyAwareScreenAdapter):
 
     name = "devin"
     display = "Devin"
+    login_command = "devin auth login"
     binary_name = "devin"
     # --permission-mode: "auto" approves read-only tools, "accept-edits"
     # also workspace edits, "smart" what a fast model judges safe,
@@ -375,6 +566,45 @@ class DevinAdapter(_BusyAwareScreenAdapter):
         # "Do you trust the authors of <dir>?" / "Yes, trust ..." (strings).
         if "do you trust the authors of" in low:
             return "trust"
+        return None
+
+    # -- hosting the Boss ---------------------------------------------------------
+    # It reads AGENTS.md from its cwd, MCP servers from
+    # .devin/mcp_config.json, permissions from .devin/config.json.
+    BOSS_INSTRUCTIONS = ("AGENTS.md",)
+
+    def boss_argv(self, spec: BossSpec) -> list[str] | None:
+        entry = spec.stdio_entry()
+        write_private_json(spec.boss_dir / ".devin" / "mcp_config.json",
+                           {"mcpServers": {spec.server: entry}})
+        # Its tools are the boss server's; the shell and the editor are
+        # denied by rule so a Boss in dangerous mode still cannot code.
+        write_private_json(spec.boss_dir / ".devin" / "config.json", {
+            "permissions": {
+                "allow": [f"mcp__{spec.server}__*"],
+                "deny": ["Exec(*)", "Write(**)", "Write(/**)"],
+            }})
+        argv = [self.binary, "--permission-mode", "dangerous",
+                "--respect-workspace-trust", "false"]
+        if spec.model:
+            argv += ["--model", spec.model]
+        if spec.resume:
+            argv += ["--resume", spec.session_id]
+        return argv
+
+    def boss_resumable(self, boss_dir: Path, session_id: str) -> bool:
+        try:
+            listing = subprocess.run(
+                [self.binary, "list", "--format", "json"], cwd=str(boss_dir),
+                capture_output=True, text=True, timeout=30, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            application_log("runtime", "devin.list_failed",
+                            "devin list did not answer; the Boss starts a "
+                            "new session", severity="warning", exc_info=True)
+            return False
+        return session_id in listing.stdout
+
+    def boss_needle(self, spec: BossSpec) -> str | None:
         return None
 
 

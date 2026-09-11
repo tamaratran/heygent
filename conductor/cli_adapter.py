@@ -21,9 +21,56 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .agent_events import AgentEvent, SUMMARY_CEILING, keep_end
+
+
+@dataclass
+class BossSpec:
+    """What a CLI needs to host the Boss: where it runs, how it reaches
+    the `boss` MCP server, which session it is. The adapter turns this
+    into a command line and whatever per-CLI configuration that command
+    line needs, written under boss_dir (docs/any-cli.md, Phase 4)."""
+
+    boss_dir: Path                  # the Boss's cwd; its files live here
+    server: str                     # the MCP server's name ("boss")
+    tools: tuple[str, ...]          # the tool names the server offers
+    session_id: str | None          # known up front (pinned or resumed)
+    resume: bool                    # resume session_id, not start it
+    boss_id: str = ""               # the durable BossSession's id
+    credential: str = ""            # what the bridge expects from this Boss
+    # The MCP server as a stdio command: the verified boss-mcp launcher
+    # and its arguments (no credential in them). token_file holds the
+    # credential, mode 0600, for a CLI whose config cannot be kept
+    # private (one that takes it on the command line).
+    command: str | None = None
+    args: list[str] = field(default_factory=list)
+    token_file: Path | None = None
+    # The conductor's own HTTP endpoint instead (transport "http"): the
+    # full MCP entry, credential in its headers. Set, it replaces command.
+    http_entry: dict | None = None
+    model: str | None = None
+    # Adapter-specific extras (Claude: effort, session settings, debug
+    # file). Others ignore what they do not know.
+    extra: dict = field(default_factory=dict)
+
+    def stdio_entry(self, private: bool = True, **more) -> dict:
+        """The server as the {command, args, env} object every CLI's MCP
+        config spells in nearly the same JSON. private: the config this
+        lands in is a 0600 file, so the credential can ride in env; else
+        it is read from token_file, and the entry names only paths."""
+        if self.http_entry is not None:
+            return dict(self.http_entry)
+        entry = {"command": self.command, "args": list(self.args), **more}
+        if private:
+            entry["env"] = {"BOSS_MCP_TOKEN": self.credential,
+                            "BOSS_SESSION_ID": self.boss_id}
+        else:
+            entry["args"] += ["--token-file", str(self.token_file),
+                              "--boss-id", self.boss_id]
+        return entry
 
 
 class CliAdapter:
@@ -34,6 +81,7 @@ class CliAdapter:
     name = "generic"                # what capabilities and tasks call it
     display = "CLI"
     binary_name = ""
+    login_command = ""              # what the user runs when it is signed out
 
     def __init__(self, binary: str | None = None) -> None:
         self.binary = binary or (shutil.which(self.binary_name)
@@ -137,6 +185,17 @@ class CliAdapter:
     def prepare_text(self, message: str) -> str:
         return " ".join(message.split()) if self.ONE_LINE else message
 
+    def sent(self, message: str, state: dict) -> list[AgentEvent]:
+        """The runtime typed `message` into the session and saw it go.
+
+        A CLI with a transcript writes the user line there, and normalize
+        reports it (source "user_message") - which is how the Boss tells
+        its own utterance from a line the user typed, and a reply from the
+        reply to a pushed worker update. A CLI read off its screen writes
+        nothing; it says so here, from the one party that knows what went
+        in. Nothing by default: a transcript will report the line itself."""
+        return []
+
     # -- answering a permission prompt ---------------------------------------
     def approve_keys(self, screen: str) -> list[list[str]]:
         """The send-keys sequences that accept the prompt on screen.
@@ -193,6 +252,45 @@ class CliAdapter:
         """A string on the running process's command line that names
         this session, for the process table's second opinion."""
         return session_id or None
+
+    # -- hosting the Boss -----------------------------------------------------------
+    # The file(s) in its cwd the CLI reads standing instructions from.
+    BOSS_INSTRUCTIONS: tuple[str, ...] = ("AGENTS.md",)
+    # How the CLI spells a tool of the `boss` MCP server to the model
+    # (Claude Code: mcp__boss__create_task); None when it shows the plain
+    # name. The Boss's instructions name its tools this way.
+    BOSS_TOOL_PREFIX: str | None = None
+    # Whether launch_argv can dictate a fresh session's id (Claude Code's
+    # --session-id, Gemini's --session-id). A CLI that cannot has its id
+    # discovered after launch, the way a worker's is.
+    PINS_SESSION_ID = False
+
+    def boss_argv(self, spec: BossSpec) -> list[str] | None:
+        """The command line for the Boss in spec.boss_dir with the `boss`
+        MCP server wired in and coding tools off. Writes whatever per-CLI
+        configuration that needs under boss_dir. None: this CLI has no
+        MCP client the Boss could reach its tools through."""
+        return None
+
+    def boss_resumable(self, boss_dir: Path, session_id: str) -> bool:
+        """Can a Boss session with this id be resumed from boss_dir? A
+        CLI that resumes only by id it never told us answers no."""
+        return False
+
+    def boss_needle(self, spec: BossSpec) -> str | None:
+        """A string on the Boss process's command line that nothing else
+        on the machine carries - the process table's answer to "is the
+        Boss still running". None: cannot tell from the process table."""
+        return None
+
+    def boss_existing(self, boss_dir: Path, session_id: str) -> set | None:
+        """The transcripts to ignore when a resumed Boss's own is
+        discovered: everything in boss_dir's transcript dir but its."""
+        directory = self.transcript_dir(str(boss_dir))
+        if directory is None:
+            return None
+        return {str(p) for p in self.transcripts(str(boss_dir))
+                if self.session_id_of(p) != session_id}
 
 
 # Vertical frame furniture a TUI draws at the edges of its box ("│ > hi │").
@@ -437,6 +535,7 @@ class ClaudeCodeAdapter(CliAdapter):
     name = "claude-code"
     display = "Claude Code"
     binary_name = "claude"
+    login_command = "claude /login"
 
     # The user answers by voice, relayed as typed text. AskUserQuestion
     # renders an option menu the relay cannot submit (typing moves the
@@ -528,6 +627,57 @@ class ClaudeCodeAdapter(CliAdapter):
 
     def finished_turn(self, transcript: Path) -> str | None:
         return finished_turn(transcript)
+
+    # -- hosting the Boss ---------------------------------------------------------
+    BOSS_INSTRUCTIONS = ("CLAUDE.md",)
+    BOSS_TOOL_PREFIX = "mcp__boss__"
+    PINS_SESSION_ID = True
+    # Tools the Boss must not have: it conducts, it does not code. "Agent"
+    # is what Claude Code 2.1.250 calls the subagent tool ("Task" in older
+    # builds); a Boss with it could spawn workers the Conductor never hears
+    # of. "AskUserQuestion" renders an option menu the typed relay cannot
+    # submit. "MultiEdit" is gone (folded into "Edit"); naming it makes
+    # Claude Code warn that the deny rule matches no known tool.
+    BOSS_DISALLOWED = ("Bash", "Read", "Edit", "Write", "Glob", "Grep",
+                       "NotebookEdit", "Task", "Agent", "WebFetch",
+                       "WebSearch", "AskUserQuestion")
+
+    def boss_config_path(self, boss_dir: Path) -> Path:
+        return boss_dir / "mcp.json"
+
+    def boss_argv(self, spec: BossSpec) -> list[str] | None:
+        # Session-scoped: the config is named on THIS session's command
+        # line and nowhere else. The user's other Claude Code sessions
+        # never see the boss tools, and never see this file. The
+        # credential rides in the server's env, as boss-mcp reads it.
+        entry = spec.stdio_entry(type="stdio")
+        config = self.boss_config_path(spec.boss_dir)
+        config.write_text(json.dumps({"mcpServers": {spec.server: entry}}, indent=2))
+        config.chmod(0o600)
+        argv = [self.binary, "--permission-mode", "bypassPermissions",
+                "--mcp-config", str(config), "--strict-mcp-config",
+                "--allowedTools", ",".join(f"mcp__{spec.server}__{n}" for n in spec.tools),
+                "--disallowedTools", ",".join(self.BOSS_DISALLOWED)]
+        if spec.model:
+            argv += ["--model", spec.model]
+        if spec.extra.get("effort"):
+            argv += ["--effort", spec.extra["effort"]]
+        if spec.extra.get("settings"):
+            argv += ["--settings", json.dumps(spec.extra["settings"])]
+        if spec.extra.get("debug_file"):
+            argv += ["--debug-file", spec.extra["debug_file"]]
+        argv += ["--resume" if spec.resume else "--session-id", spec.session_id]
+        return argv
+
+    def boss_resumable(self, boss_dir: Path, session_id: str) -> bool:
+        # Claude Code scopes resume to the working directory: a session
+        # whose transcript lives under another directory cannot be
+        # resumed from here, and trying launches one that never reaches
+        # its prompt.
+        return (self.transcript_dir(str(boss_dir)) / f"{session_id}.jsonl").exists()
+
+    def boss_needle(self, spec: BossSpec) -> str | None:
+        return str(self.boss_config_path(spec.boss_dir))
 
 
 ADAPTERS = {"claude-code": ClaudeCodeAdapter}
