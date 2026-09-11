@@ -46,7 +46,12 @@ class CliAdapter:
         """The command line for a fresh worker in its checkout."""
         return [self.binary, prompt]
 
-    def resume_argv(self, session_id: str) -> list[str]:
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        """The command line that reopens a session after a restart. The
+        permission mode is passed again: a CLI does not remember the mode
+        it was launched in, and a resumed worker that came back asking
+        permission would stop in a pane nobody is watching."""
         return [self.binary]
 
     # -- the screen -----------------------------------------------------------
@@ -471,8 +476,10 @@ class ClaudeCodeAdapter(CliAdapter):
             argv += ["--session-id", session_id]
         return argv + [prompt]
 
-    def resume_argv(self, session_id: str) -> list[str]:
-        return [self.binary, "--resume", session_id, *self.WORKER_MODEL,
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        mode = ["--permission-mode", permission_mode] if permission_mode else []
+        return [self.binary, "--resume", session_id, *mode, *self.WORKER_MODEL,
                 "--disallowedTools=" + ",".join(self.WORKER_DISALLOWED)]
 
     def prompt_ready(self, screen: str) -> bool:

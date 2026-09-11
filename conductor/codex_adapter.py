@@ -90,8 +90,13 @@ class CodexAdapter(CliAdapter):
         return [self.binary, *self._MODES.get(permission_mode, self._MODES["auto"]),
                 prompt]
 
-    def resume_argv(self, session_id: str) -> list[str]:
-        return [self.binary, "resume", session_id]
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        # `codex resume [OPTIONS] [SESSION_ID]`: the mode's flags go
+        # before the id (0.151's help).
+        mode = self._MODES.get(permission_mode, self._MODES["auto"]) \
+            if permission_mode else []
+        return [self.binary, "resume", *mode, session_id]
 
     # -- the screen -----------------------------------------------------------
     # Codex's composer: a "›" prompt line, and its footer hints. Measured

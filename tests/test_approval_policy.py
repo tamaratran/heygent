@@ -96,11 +96,12 @@ class WorkerPermissionModeTest(unittest.TestCase):
     to a default that could drift back.
     """
 
-    def test_workers_start_in_auto(self) -> None:
-        """Not bypass: ordinary work proceeds, and what the provider judges
-        consequential is still weighed rather than waved through."""
+    def test_workers_start_in_bypass(self) -> None:
+        """Every CLI asks permission in its own words and keys, and we
+        cannot answer all of them: a question nobody sees holds the worker
+        (asked 2026-09-10)."""
         import boss
-        self.assertEqual(boss.WORKER_PERMISSION_MODE, "auto")
+        self.assertEqual(boss.WORKER_PERMISSION_MODE, "bypassPermissions")
 
     def test_there_is_no_read_only_worker_mode(self) -> None:
         """The fallback is gone, not merely defaulted off.
@@ -119,9 +120,10 @@ class WorkerPermissionModeTest(unittest.TestCase):
         params = inspect.signature(TmuxClaudeRuntime.__init__).parameters
         self.assertNotIn("allow_write", params)
         self.assertNotIn("read_only_mode", params)
-        self.assertEqual(TmuxClaudeRuntime().permission_mode, "auto")
+        self.assertEqual(TmuxClaudeRuntime().permission_mode,
+                         "bypassPermissions")
 
-    def test_the_worker_is_launched_in_auto(self) -> None:
+    def test_the_worker_is_launched_in_bypass(self) -> None:
         """The invariant that matters: what actually reaches the argv."""
         from unittest import mock
 
@@ -141,7 +143,7 @@ class WorkerPermissionModeTest(unittest.TestCase):
         self.assertIsNotNone(launch, "no session was launched")
         self.assertIn("--permission-mode", launch)
         self.assertEqual(launch[launch.index("--permission-mode") + 1],
-                         "auto")
+                         "bypassPermissions")
 
     def test_the_mode_is_one_the_cli_accepts(self) -> None:
         """A mode the binary rejects means no worker starts at all, which
@@ -153,6 +155,7 @@ class WorkerPermissionModeTest(unittest.TestCase):
 
     def test_every_provider_has_a_bypass_equivalent(self) -> None:
         import boss
-        for provider in ("claude-code", "codex"):
+        from conductor.task_types import PROVIDERS
+        for provider in PROVIDERS:
             self.assertIn(provider, boss.PROVIDER_BYPASS_FLAGS)
             self.assertTrue(boss.PROVIDER_BYPASS_FLAGS[provider])

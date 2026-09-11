@@ -25,8 +25,10 @@ Gemini's dialogs, flags and prompt markers.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
+from pathlib import Path
 
 from .agent_events import AgentEvent
 from .cli_adapter import CliAdapter
@@ -173,10 +175,13 @@ class GeminiAdapter(ScreenAdapter):
         return [self.binary, "--approval-mode", mode,
                 "--prompt-interactive", prompt]
 
-    def resume_argv(self, session_id: str) -> list[str]:
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
         # Gemini resumes by index or "latest", not by id: the newest
         # session in this checkout is the one we started there.
-        return [self.binary, "--resume", "latest"]
+        mode = ["--approval-mode", self._MODES.get(permission_mode, "auto_edit")] \
+            if permission_mode else []
+        return [self.binary, *mode, "--resume", "latest"]
 
     def startup_dialog(self, screen: str) -> str | None:
         low = screen.lower()
@@ -273,8 +278,10 @@ class CursorAdapter(ScreenAdapter):
             argv.append("--force")
         return argv + [prompt]
 
-    def resume_argv(self, session_id: str) -> list[str]:
-        return [self.binary, "--trust", "--resume", session_id]
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        force = ["--force"] if permission_mode == "bypassPermissions" else []
+        return [self.binary, "--trust", *force, "--resume", session_id]
 
     def startup_dialog(self, screen: str) -> str | None:
         low = screen.lower()
@@ -286,5 +293,148 @@ class CursorAdapter(ScreenAdapter):
         return None
 
 
+class _BusyAwareScreenAdapter(ScreenAdapter):
+    """A ScreenAdapter whose prompt is not "back" while the CLI says it is
+    working, is on a startup dialog, or is asking. ScreenAdapter's settle
+    ignores busy, which is how Cursor reported a turn finished mid-turn
+    (live, 2026-09-11)."""
+
+    # Only these words are an approval: the generic shapes ("allow",
+    # "approve") are ordinary words, and a false match types approve_keys
+    # into a CLI that asked nothing.
+    _APPROVAL: tuple[str, ...] = ()
+
+    def prompt_ready(self, screen: str) -> bool:
+        if self.startup_dialog(screen) is not None or self.busy(screen) \
+                or self.approval_prompt(screen) is not None:
+            return False
+        return super().prompt_ready(screen)
+
+    def approval_prompt(self, screen: str) -> str | None:
+        if not self._APPROVAL or self.startup_dialog(screen) is not None:
+            return None
+        lines = self.lines(screen)
+        for index, line in enumerate(lines):
+            if any(mark in line.lower() for mark in self._APPROVAL):
+                return " | ".join(lines[max(0, index - 3):index]) or "permission request"
+        return None
+
+    def process_needle(self, session_id: str | None) -> str | None:
+        return None                 # screen sessions have invented ids
+
+
+class DevinAdapter(_BusyAwareScreenAdapter):
+    """Devin's terminal agent (`devin`, 3000.6.7 here, installed by Devin
+    Desktop). Measured 2026-09-10: its --help, and the log-in screen a
+    signed-out CLI shows ("Welcome to Devin CLI! / How would you like to
+    log in?"). It is not signed in here, so a working screen has not been
+    seen: the placeholder, busy and approval words below are from the
+    binary's strings. It keeps sessions in a database, not a transcript
+    we can tail, so it is read off the screen."""
+
+    name = "devin"
+    display = "Devin"
+    binary_name = "devin"
+    # --permission-mode: "auto" approves read-only tools, "accept-edits"
+    # also workspace edits, "smart" what a fast model judges safe,
+    # "dangerous" every tool.
+    _MODES = {"auto": "smart", "acceptEdits": "accept-edits",
+              "default": "auto", "bypassPermissions": "dangerous"}
+    # The empty box's hint, or a bare prompt character.
+    PROMPT = re.compile(r"(Ask Devin to |^[>❯❭›]\s*$)")
+    PLACEHOLDERS = ("ask devin to",)
+    # The box's hint while a turn runs, and the interrupt hint.
+    BUSY = re.compile(r"(Guide Devin while it works|esc (again|twice) to interrupt)",
+                      re.I)
+    _APPROVAL = ("yes, allow once",)
+
+    def launch_argv(self, prompt: str, permission_mode: str,
+                    session_id: str | None = None) -> list[str]:
+        # The "--" is load-bearing: `devin [PATH]... [-- <PROMPT>...]`, so
+        # a brief without it is a path, and Devin Desktop opens on it.
+        return [self.binary, "--permission-mode",
+                self._MODES.get(permission_mode, "smart"), "--", prompt]
+
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        mode = ["--permission-mode", self._MODES.get(permission_mode, "smart")] \
+            if permission_mode else []
+        if session_id and not session_id.startswith("scr_"):
+            return [self.binary, *mode, "--resume", session_id]
+        # A screen session's id is ours, not Devin's. Its sessions are
+        # listed per directory (`devin list`), and each worker has its own
+        # checkout, so the most recent one there is the one we started.
+        return [self.binary, *mode, "--continue"]
+
+    def startup_dialog(self, screen: str) -> str | None:
+        low = screen.lower()
+        # Not "Welcome to Devin CLI!" alone: a banner can outlive the
+        # log-in, and a dialog that never clears holds the worker for good.
+        if "how would you like to log in" in low:
+            return "auth"
+        # "Do you trust the authors of <dir>?" / "Yes, trust ..." (strings).
+        if "do you trust the authors of" in low:
+            return "trust"
+        return None
+
+
+class DroidAdapter(_BusyAwareScreenAdapter):
+    """Factory's Droid (`droid`, 0.73.0 here). Measured 2026-09-10: its
+    --help, and the screen a signed-out CLI shows ("Please login with your
+    Factory account to continue." over "> Login / Exit"). It is not signed
+    in here; the busy words are from the binary's strings.
+
+    Interactive droid has no permission flag - `--skip-permissions-unsafe`
+    and `--auto` belong to `droid exec`. Its autonomy level is a setting,
+    and `--settings <path>` merges a settings file for this process only.
+    The file's shape is settings.json's, from the binary: the level sits in
+    sessionDefaultSettings, and a "general" wrapper is refused. "high" is
+    "allow all commands", the most the interactive CLI offers."""
+
+    name = "droid"
+    display = "Droid"
+    binary_name = "droid"
+    _AUTONOMY = {"auto": "medium", "acceptEdits": "low",
+                 "bypassPermissions": "high"}
+    # Where the overlay files are written, one per level.
+    SETTINGS_DIR = Path.home() / ".voice-conductor" / "cli-settings"
+    BUSY = re.compile(r"press esc to stop", re.I)
+
+    def settings_overlay(self, permission_mode: str | None) -> list[str]:
+        """["--settings", <file>] for our mode's autonomy level, or [] for
+        a mode that leaves droid at the user's own default."""
+        level = self._AUTONOMY.get(permission_mode or "")
+        if level is None:
+            return []
+        path = Path(self.SETTINGS_DIR) / f"droid-autonomy-{level}.json"
+        body = json.dumps({"sessionDefaultSettings": {"autonomyLevel": level}})
+        try:
+            if not path.is_file() or path.read_text() != body:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body)
+        except OSError:
+            return []               # droid refuses a missing file; start it plain
+        return ["--settings", str(path)]
+
+    def launch_argv(self, prompt: str, permission_mode: str,
+                    session_id: str | None = None) -> list[str]:
+        return [self.binary, *self.settings_overlay(permission_mode), prompt]
+
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        argv = [self.binary, *self.settings_overlay(permission_mode)]
+        if session_id and not session_id.startswith("scr_"):
+            return argv + ["--resume", session_id]
+        # A bare --resume takes droid's last modified session, which need
+        # not be this checkout's; starting afresh is the safe miss.
+        return argv
+
+    def startup_dialog(self, screen: str) -> str | None:
+        if "please login with your factory account" in screen.lower():
+            return "auth"
+        return None
+
+
 ADAPTERS = {"gemini": GeminiAdapter, "cursor": CursorAdapter,
+            "devin": DevinAdapter, "droid": DroidAdapter,
             "screen": ScreenAdapter}

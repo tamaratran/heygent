@@ -22,9 +22,11 @@ from .task_types import PROVIDERS
 # honest test of whether we could start one.
 PROVIDER_BINARIES = {"claude-code": ("claude",), "codex": ("codex",),
                      "gemini": ("gemini",),
-                     "cursor": ("cursor-agent", "agent")}
+                     "cursor": ("cursor-agent", "agent"),
+                     "devin": ("devin",), "droid": ("droid",)}
 PROVIDER_NAMES = {"claude-code": "Claude Code", "codex": "Codex",
-                  "gemini": "Gemini CLI", "cursor": "Cursor"}
+                  "gemini": "Gemini CLI", "cursor": "Cursor",
+                  "devin": "Devin", "droid": "Droid"}
 
 
 def all_providers() -> list[str]:

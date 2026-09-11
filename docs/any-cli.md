@@ -193,3 +193,40 @@ list shows it as `Aider (provider "aider")`, and create_task takes
 - A configured CLI's own boot dialogs (trust, sign-in) are not
   recognised; the user answers them in the window.
 
+## Every worker in its CLI's bypass mode (2026-09-10)
+
+Workers used to start in "auto": Claude Code's middle ground, and each
+other CLI's nearest equivalent - which still stopped to ask. Every CLI
+asks in its own words and keys, and we cannot answer all of them
+reliably, so a question in a pane nobody watches held the worker until
+the user opened it. `boss.WORKER_PERMISSION_MODE` is now
+`"bypassPermissions"`, and each adapter turns it into its CLI's flag on
+launch AND on resume (a CLI does not remember the mode it started in):
+
+| CLI | binary | bypass on its command line | resume | measured here |
+|---|---|---|---|---|
+| Claude Code | `claude` | `--permission-mode bypassPermissions` (its one-time acceptance dialog is answered) | `--resume <id>` | yes |
+| Codex | `codex` | `--dangerously-bypass-approvals-and-sandbox` | `codex resume <flags> <id>` | yes |
+| Gemini CLI | `gemini` | `--approval-mode yolo` | `--resume latest` | flags only (not signed in) |
+| Cursor | `cursor-agent` | `--force` | `--resume <chatId>` | yes |
+| Devin | `devin` | `--permission-mode dangerous`, brief after `--` | `--resume <id>`, or `--continue` for our `scr_` ids | --help and the log-in screen (not signed in) |
+| Droid | `droid` | `--settings <file>` holding `{"sessionDefaultSettings": {"autonomyLevel": "high"}}` | `--resume <id>`; for our `scr_` ids it starts afresh | --help, the log-in screen, the settings shape from the binary (not signed in) |
+
+Interactive droid has no permission flag (`--skip-permissions-unsafe` is
+`droid exec`'s); the overlay files live in
+`~/.voice-conductor/cli-settings/`. "high" is "allow all commands", the
+most its interactive mode offers.
+
+A CLI in providers.json gets its bypass from `permission_flags`, e.g.
+`{"bypassPermissions": ["--yes-always"]}`; without it, it runs in its own
+default and its questions wait in the pane.
+
+What bypass gives up: Bash is not contained by the worker's git worktree.
+
+Devin and Droid, still open: neither is signed in here, so the box,
+busy and approval words are from their binaries' strings and neither
+reads its input box yet (delivery is judged by the screen moving). Both
+keep real session ids we do not discover (Devin in a database, Droid in
+`~/.factory/sessions/<project>/<id>.jsonl`), so a restart cannot resume
+a Droid worker's conversation.
+

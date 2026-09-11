@@ -48,6 +48,10 @@ optional field buys back something that otherwise degrades:
     resume         no conversation to go back to: a resume starts the
                    command afresh in the same checkout
     submit         Enter
+    permission_flags  the CLI runs in its own default permission mode and
+                   its questions wait in the pane; workers start in
+                   "bypassPermissions", so {"bypassPermissions": ["--yolo"]}
+                   adds that CLI's flag on launch and on resume
     chrome         status lines can land in the card body
     settle_s       5 s without a prompt pattern, 1.2 s with one
 
@@ -155,11 +159,14 @@ class ConfiguredAdapter(ScreenAdapter):
             return argv + [self.brief, prompt]
         return argv
 
-    def resume_argv(self, session_id: str) -> list[str]:
+    def resume_argv(self, session_id: str,
+                    permission_mode: str | None = None) -> list[str]:
+        flags = self._permission_flags.get(permission_mode, []) \
+            if permission_mode else []
         if self._resume is None:
-            return [self.binary, *self.command[1:]]
+            return [self.binary, *self.command[1:], *flags]
         return [self.binary if part == self.command[0] else part
-                for part in self._resume]
+                for part in self._resume] + flags
 
     # -- the screen -----------------------------------------------------------
     # How much of the bottom of the screen `busy` is matched against. A

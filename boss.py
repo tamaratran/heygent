@@ -27,25 +27,36 @@ BLOCKED_WITHOUT_WRITE = ["Bash", "Edit", "Write", "NotebookEdit",
                          "Task", "WebFetch", "WebSearch"]
 MAX_TURNS = 6                 # how far one work item may go on its own
 
-# How a worker session starts. "auto" lets it get on with ordinary work
-# without stopping to ask, while still gating what the provider considers
-# consequential - the middle ground bypassPermissions did not offer, which
-# waved through everything including Bash.
+# How a worker session starts: every CLI in its own bypass mode (asked
+# 2026-09-10). A permission prompt is a question typed into a pane nobody
+# is watching, and each CLI asks in its own words with its own keys -
+# Claude Code's numbered menu, Codex's overlay, Cursor's "Run this
+# command?", Gemini's, Devin's and Droid's. Recognising and answering all
+# of them reliably is not something we can do, and a prompt we miss holds
+# the worker until the user opens its window. "auto" was the middle ground
+# for Claude Code alone; the other CLIs' versions of it still stopped to ask.
 #
-# A worker is in its own git worktree on its own branch, so file changes
-# are contained; Bash is not, and can still install, fetch and touch things
-# outside that tree. That is exactly what auto still weighs, and it is why
-# this is no longer bypass.
+# What that gives up: a worker's Bash is not contained by its git worktree,
+# so it can install, fetch and touch things outside it without asking. The
+# worktree still contains its file edits, and every worker runs in a
+# window the user can open and the Boss can interrupt.
 #
-# There is no read-only worker: a delegated agent that stops for every edit
-# is one nobody is there to answer. Anything auto does escalate reaches the
-# user through the approval path rather than dying in an unwatched pane.
-WORKER_PERMISSION_MODE = "auto"
+# Each adapter maps this onto its CLI's flag, on launch and on resume
+# (PROVIDER_BYPASS_FLAGS below). A cloud session refuses bypass; the cloud
+# runtime passes no permission mode at all.
+WORKER_PERMISSION_MODE = "bypassPermissions"
 
-# The equivalent for other providers, for when their runtime lands.
+# What "bypassPermissions" becomes on each CLI's command line. The
+# adapters are the source of truth; this is the table a person reads.
 PROVIDER_BYPASS_FLAGS = {
     "claude-code": ["--permission-mode", "bypassPermissions"],
     "codex": ["--dangerously-bypass-approvals-and-sandbox"],
+    "gemini": ["--approval-mode", "yolo"],
+    "cursor": ["--force"],
+    "devin": ["--permission-mode", "dangerous"],
+    # Interactive droid has no flag for it; a settings overlay file with
+    # {"sessionDefaultSettings": {"autonomyLevel": "high"}} does it.
+    "droid": ["--settings", "<autonomy high overlay>"],
 }
 
 # --- how answers reach the user -----------------------------------------

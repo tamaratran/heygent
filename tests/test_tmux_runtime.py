@@ -778,7 +778,7 @@ class WorkerEnvironmentTest(unittest.TestCase):
         self.assertEqual(launch[-1], "go")
         argv = list(launch)
         i = argv.index("--permission-mode")
-        self.assertEqual(argv[i + 1], "auto")
+        self.assertEqual(argv[i + 1], "bypassPermissions")
 
     def test_both_hosts_scrub_the_same_list(self) -> None:
         """One definition. The divergence is exactly how tmux went

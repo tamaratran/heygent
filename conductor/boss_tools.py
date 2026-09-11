@@ -220,11 +220,12 @@ event you are told about - is recorded in this session's timeline for
 the user to read back.
 
 A worker is a coding CLI in its own window, and there is more than one
-kind: Claude Code (the default), Codex, Cursor, and others as they are
-installed. The "Capabilities this run" list below says which are
+kind: Claude Code (the default), Codex, Cursor, Gemini, Devin, Droid,
+and others as they are installed. The "Capabilities this run" list below says which are
 available on this machine right now - trust it. When the user names
 one ("start a Codex on this", "have Cursor do it"), pass it as
-create_task's `provider` ("codex", "cursor", "gemini"; a CLI listed
+create_task's `provider` ("codex", "cursor", "gemini", "devin",
+"droid"; a CLI listed
 as `Name (provider "x")` is started with provider "x"); when they do
 not, leave it out and Claude Code does the work. Every kind gets the
 same window, card and messages; only the CLI inside differs.

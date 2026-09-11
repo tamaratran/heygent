@@ -352,7 +352,7 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                  claude_binary: str | None = None,
                  startup_timeout: float = 60.0,
                  approval_policy: ApprovalPolicy | None = None,
-                 permission_mode: str = "auto",
+                 permission_mode: str = "bypassPermissions",
                  adapter: CliAdapter | None = None) -> None:
         # One mode, always. The whole point of a delegated task is that
         # nobody is watching its terminal, and a worker that stops for every
@@ -360,9 +360,11 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         # to fall back to made every edit prompt in a pane no one was
         # looking at, which read as "bypass is broken" rather than "a flag
         # is missing".
-        # "auto" rather than "bypassPermissions": ordinary work proceeds,
-        # and what the provider judges consequential still gets weighed
-        # instead of waved through.
+        # Bypass, and not "auto": every CLI asks permission in its own
+        # words and keys, and we cannot answer all of them reliably, so a
+        # question none of us can see would hold the worker. Each adapter
+        # turns this into its CLI's own bypass flag, on launch and on
+        # resume (boss.WORKER_PERMISSION_MODE says what that gives up).
         self.permission_mode = permission_mode
         # This process's counting of event sequences. Stamped on every
         # event, so the reducer can tell a restarted runtime's 1 from a
@@ -399,6 +401,9 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
     # never runs __init__, and a runtime that has not been told otherwise
     # hosts Claude Code.
     _adapter: CliAdapter | None = None
+    # The same default for the mode, for the same __new__-built runtimes:
+    # resume passes it again, and there it was the attribute nobody set.
+    permission_mode = "bypassPermissions"
 
     @property
     def adapter(self) -> CliAdapter:
@@ -1591,7 +1596,8 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         result = await self._off_loop(
             self._tmux, "new-session", "-d", "-s", name, "-c", cwd,
             *scrub_argv(task_id, self.home),
-            *self.adapter.resume_argv(session_id))
+            *self.adapter.resume_argv(session_id,
+                                      permission_mode=self.permission_mode))
         if result.returncode != 0:
             detail = result.stderr.strip()
             if "duplicate session" in detail.lower():

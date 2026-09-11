@@ -36,7 +36,7 @@ class RecordingAdapter(CliAdapter):
         self.asked.append("launch_argv")
         return [self.binary, "--go", prompt]
 
-    def resume_argv(self, session_id):
+    def resume_argv(self, session_id, permission_mode=None):
         self.asked.append("resume_argv")
         return [self.binary, "--continue", session_id]
 

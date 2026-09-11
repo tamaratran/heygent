@@ -19,7 +19,7 @@ TASK_STATUSES = ("queued", "starting", "running", "waiting_for_user",
 # The CLIs with an adapter in code. Not the only ones a task may name: a
 # CLI described in providers.json (configured_adapter) is a provider too,
 # and a task stored under one must still load after the entry is gone.
-PROVIDERS = ("claude-code", "codex", "gemini", "cursor")
+PROVIDERS = ("claude-code", "codex", "gemini", "cursor", "devin", "droid")
 PROVIDER_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,39}$")
 
 ISOLATION_TYPES = ("git-worktree", "provider-managed", "shared", "sandbox")
