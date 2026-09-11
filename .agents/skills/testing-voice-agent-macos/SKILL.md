@@ -41,7 +41,7 @@ description: How to run and end-to-end test the voice-agent macOS app (conduct.s
 - The public one-liner 404s while the repo is private. Serve install.sh from
   the local clone (`python3 -m http.server 8765 --directory ~/repos/voice-agent`)
   and run `curl -fsSL http://localhost:8765/install.sh |
-  VOICE_CONDUCTOR_REPO=https://git-manager.devin.ai/proxy/github.com/tamaratran/voice-agent.git bash`.
+  VOICE_CONDUCTOR_REPO=https://git-manager.devin.ai/proxy/github.com/tamaratran/heygent.git bash`.
 - Devin's Terminal zsh exports an OPENAI_API_KEY without GPT Live access, and
   conduct.py prefers os.environ over .env — launch with
   `env -u OPENAI_API_KEY conduct` to get the first-run key prompt / use .env.
