@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import unittest
 from collections import deque
 from unittest import mock
@@ -157,6 +158,7 @@ class TheVoiceSendsTheWords(unittest.TestCase):
         a = VoiceAgent.__new__(VoiceAgent)
         a.ui = mock.Mock()
         a.heard = ""
+        a.words_at, a.heard_final = 0.0, False
         a.spoken = deque(maxlen=60)
         a.asked_parts = []
         a._arm_ask = lambda: None
@@ -223,6 +225,87 @@ class TheVoiceSendsTheWords(unittest.TestCase):
                          if c.kwargs.get("state") == "listening")
         self.assertLess(sent.index(mock.call(words="")), listening,
                         "the old words would flash up before being cleared")
+
+
+@unittest.skipUnless(HAVE_VOICE, "aiohttp/sounddevice not available")
+class TheCapsuleWaitsForLateWords(unittest.TestCase):
+    """Measured 2026-09-10: Fn up at 46.73 s, "Yes" landed at 47.57 s, and the
+    capsule hid a fixed 1.2 s after release - the answer had a third of a
+    second on screen."""
+
+    def agent(self, released_ago, words_ago=None, final=False):
+        a = VoiceAgent.__new__(VoiceAgent)
+        now = time.monotonic()
+        a.ui = mock.Mock()
+        a.ui.state = "listening"
+        a.running, a.holding, a.was_holding = True, False, False
+        a.speaker = mock.Mock(speaking=False)
+        a.reply_expires_at = 0.0
+        a.last_active = now - released_ago
+        a.words_at = 0.0 if words_ago is None else now - words_ago
+        a.heard_final = final
+        a.heard = "Yes"
+        return a
+
+    def hides(self, a, words=True) -> bool:
+        async def once(_seconds):
+            a.running = False
+
+        with mock.patch.multiple(voice_agent.boss, CAPSULE_WORDS=words,
+                                 SHOW_CAPTION=False), \
+             mock.patch.object(voice_agent.asyncio, "sleep", once):
+            asyncio.run(a._pump_ui())
+        return mock.call(state="hidden") in a.ui.send.call_args_list
+
+    def test_a_word_that_lands_after_release_is_not_cut_off(self):
+        self.assertFalse(self.hides(self.agent(released_ago=1.5, words_ago=0.3,
+                                               final=True)))
+
+    def test_it_waits_for_the_turn_to_finish(self):
+        self.assertFalse(self.hides(self.agent(released_ago=1.5)))
+
+    def test_it_goes_once_the_last_word_has_been_readable(self):
+        self.assertTrue(self.hides(self.agent(released_ago=2.0, words_ago=1.4,
+                                              final=True)))
+
+    def test_a_tap_with_nothing_said_does_not_keep_it_up(self):
+        wait = VoiceAgent.LATE_WORDS_WAIT
+        self.assertTrue(self.hides(self.agent(released_ago=wait + 0.1)))
+
+    def test_without_words_or_caption_the_plain_linger_stands(self):
+        self.assertTrue(self.hides(self.agent(released_ago=1.3), words=False))
+
+    def test_the_transcript_marks_when_words_land_and_when_they_are_final(self):
+        a = self.agent(released_ago=0.5)
+        a.heard = ""
+        a.spoken = deque(maxlen=60)
+        a.asked_parts = []
+        a.ask_settle = None
+        a.request = ""
+        a.trace_id = "t"
+        a.released_at = time.monotonic() - a.POST_RELEASE_GRACE - 0.1
+        a._emit = lambda *args, **kwargs: None
+        a._start_work = lambda *args, **kwargs: None
+        frames = [
+            _Frame(aiohttp.WSMsgType.TEXT, json.dumps(
+                {"type": "session.input_transcript.delta", "delta": "Yes"})),
+        ]
+        with mock.patch.multiple(voice_agent.boss, CAPSULE_WORDS=True,
+                                 SHOW_CAPTION=False), \
+             mock.patch.object(voice_agent, "log", lambda *args, **kw: None), \
+             mock.patch("builtins.print"):
+            asyncio.run(a._read_events(_FakeWs(frames)))
+        self.assertGreater(a.words_at, 0.0)
+        self.assertFalse(a.heard_final)
+
+        async def no_wait(_seconds):
+            return None
+
+        # The new protocol has no end-of-turn event: _settle_ask decides the
+        # user's words are done once the release is past its grace period.
+        with mock.patch.object(voice_agent.asyncio, "sleep", no_wait):
+            asyncio.run(a._settle_ask())
+        self.assertTrue(a.heard_final)
 
 
 @unittest.skipUnless(HAVE_APPKIT, "pyobjc/AppKit not available")
