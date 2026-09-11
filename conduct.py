@@ -64,6 +64,7 @@ from conductor import (JsonlSink, LoggingSink, ObservabilityBus,
                        drain_subprocess_stderr, instance,
                        install_asyncio_exception_handler,
                        start_loop_stall_monitor)
+from conductor import app_bundle
 from conductor.claude_manager import ClaudeManagerBackend
 from conductor.boss_bridge import BossBridge
 from conductor.conductor_mcp import ConductorMcp
@@ -806,7 +807,8 @@ async def main() -> int:
     # stdout carries the overlay's NDJSON protocol, so only stderr is piped
     # here: its warnings and tracebacks used to land nowhere at all.
     overlay = await asyncio.create_subprocess_exec(
-        *spawn, str(HERE / "overlay.py"), stdin=asyncio.subprocess.PIPE,
+        *app_bundle.script_argv(HERE / "overlay.py", spawn),
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     ui = Ui(overlay)
     stderr_readers = [asyncio.create_task(
@@ -1197,8 +1199,9 @@ async def main() -> int:
             else:
                 await boss_page.start()
                 boss_window = await asyncio.create_subprocess_exec(
-                    uv, "run", "--script",
-                    str(HERE / "conductor" / "app_mac.py"),
+                    *app_bundle.script_argv(
+                        HERE / "conductor" / "app_mac.py",
+                        [uv, "run", "--script"]),
                     "--url", boss_page.url + "?app=1",
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE)

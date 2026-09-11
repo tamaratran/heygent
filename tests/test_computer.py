@@ -799,6 +799,25 @@ class CliCommandTest(unittest.TestCase):
             self.assertEqual(computer.cli_command(),
                              f"python3 {self.script}")
 
+    def test_in_the_app_the_apps_own_executable_runs_it(self) -> None:
+        exe = "/Applications/Voice Agent.app/Contents/MacOS/Voice Agent"
+        with mock.patch("conductor.app_bundle.inside_bundle",
+                        return_value=True), \
+             mock.patch.object(computer.sys, "executable", exe), \
+             mock.patch("conductor.boss_helper.find_uv", return_value=UV):
+            command = computer.cli_command()
+        self.assertEqual(command, f"'{exe}' {self.script}")
+        policy = ApprovalPolicy()
+        for script_path in (self.script,
+                            "/Applications/Voice Agent.app/Contents/Resources"
+                            "/app/conductor/computer.py"):
+            quoted = f"'{exe}' '{script_path}'"
+            self.assertEqual(policy.decide("Bash", {"command": f"{quoted} look"}),
+                             "allow")
+            self.assertEqual(policy.decide("Bash",
+                                           {"command": f"{quoted} click 1 2"}),
+                             "ask")
+
     def test_the_brief_carries_the_same_command(self) -> None:
         with mock.patch("conductor.boss_helper.find_uv", return_value=UV):
             self.assertIn(computer.cli_command(), computer.worker_brief())

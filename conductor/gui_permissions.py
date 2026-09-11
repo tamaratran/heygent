@@ -39,7 +39,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import computer
+from . import app_bundle, computer
 from .observability import application_log
 
 # The pane for each grant. Voice grants first: without the microphone
@@ -126,6 +126,8 @@ def this_app(env=None) -> str:
     the Privacy & Security list."""
     env = os.environ if env is None else env
     bundle = env.get("__CFBundleIdentifier", "")
+    if bundle == app_bundle.BUNDLE_ID:
+        return app_bundle.APP_NAME
     if bundle in APP_NAMES:
         return APP_NAMES[bundle]
     program = env.get("TERM_PROGRAM", "")

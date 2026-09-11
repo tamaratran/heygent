@@ -10,6 +10,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from conductor.locator import ProjectLocator
@@ -124,6 +125,17 @@ class LocatorTest(unittest.TestCase):
         worktree.mkdir()
         (worktree / ".git").write_text(f"gitdir: {repo}/.git/worktrees/x\n")
         self.assertIsNone(self.locator.inspect_path(worktree))
+
+    def test_the_mac_homes_library_is_never_scanned(self) -> None:
+        user_home = Path(self.tmp.name) / "me"
+        make_repo(user_home / "Library" / "Caches" / "some-repo")
+        make_repo(user_home / "code" / "Library" / "real-repo")
+        make_repo(user_home / "code" / "app")
+        locator = ProjectLocator(self.store, [user_home])
+        with mock.patch.object(Path, "home", return_value=user_home):
+            locator.scan()
+        names = sorted(Path(c.path).name for c in locator.index.entries())
+        self.assertEqual(names, ["app", "real-repo"])
 
     def test_own_home_is_never_scanned(self) -> None:
         make_repo(self.home / "workspaces" / "proj_x" / "task_y")

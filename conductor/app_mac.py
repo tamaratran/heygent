@@ -509,8 +509,12 @@ def build_menu(app) -> None:
 
 
 def call_it_voice_agent() -> None:
-    """The menu bar names the process; a script's is "Python"."""
+    """The menu bar names the process; a script's is "Python". Inside
+    the app, Info.plist already names it."""
     from Foundation import NSBundle
+    from conductor import app_bundle
+    if app_bundle.inside_bundle():
+        return
     info = NSBundle.mainBundle().infoDictionary()
     if info is not None:
         info["CFBundleName"] = "voice-agent"

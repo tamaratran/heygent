@@ -186,6 +186,11 @@ class ProjectLocator:
             if depth > _MAX_DEPTH or directory.name in _SKIP_DIRS or \
                     directory.name.startswith("."):
                 return
+            # Opened from Finder the search root is the home folder, and a
+            # Mac home's Library is ~16,000 directories deep enough to
+            # walk (3.6 s, measured) with never a project in it.
+            if directory.name == "Library" and directory.parent == Path.home():
+                return
             resolved = directory.resolve()
             # Never inspect our own home: managed worktrees under
             # <home>/workspaces/ must not appear as projects (spec 18).

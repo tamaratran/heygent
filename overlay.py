@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pyobjc-framework-Cocoa>=10,<12"]
+# dependencies = ["pyobjc-framework-Cocoa>=10,<13"]
 # ///
 
 """A floating "you're being heard" indicator, in the spirit of Wispr Flow.
