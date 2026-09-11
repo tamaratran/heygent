@@ -1,0 +1,24 @@
+  16. Sunlight breaks into sparkles on the swell.
+  17. Jellyfish drift like slow lanterns.
+  18. Shells collect the sea's small stories.
+  19. The abyss stays dark and cold.
+  20. Currents carry heat around the globe.
+  21. Driftwood washes up worn smooth and pale.
+  22. Fog rolls in softly off the water.
+  23. Dolphins ride the bow waves of boats.
+  24. Tide pools hold tiny worlds.
+  25. The sea swallows the setting sun.
+  26. At night, plankton glow blue in the surf.
+  27. Shipwrecks sleep on the ocean floor.
+  28. Seawater covers most of the planet.
+  29. Its roar echoes inside a conch shell.
+  30. The sea always comes back to the shore.
+
+  Like the tide, these lines end here, and there's always more to find.
+
+✻ Baked for 12s · done 8:21 PM
+  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and re…
+────────────────────────────────────────────────────────────────────────────────
+❯ show the remaining 30 files
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

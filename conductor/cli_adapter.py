@@ -200,7 +200,8 @@ def normalize_entry(entry: dict, state: dict) -> list[AgentEvent]:
                 text = block["text"].strip()
                 state.setdefault("turn_text", []).append(text)
                 events.append(AgentEvent(type="progress",
-                                         summary=text[:300]))
+                                         summary=text[:300],
+                                         text=text[:SUMMARY_CEILING]))
             elif block.get("type") == "tool_use":
                 said = True
                 name = block.get("name", "tool")

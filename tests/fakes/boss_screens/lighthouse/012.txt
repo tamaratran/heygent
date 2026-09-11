@@ -1,0 +1,24 @@
+
+ ▐▛███▛█   Claude Code v2.1.268
+▝▜██████▀  Opus 5 with low effort · Claude Max
+  ▝▝ ▝▝    ~/probe · /rc
+
+
+❯ Write about 12 lines of plain prose about lighthouses, in two paragraphs,
+  with one bulleted list of 3 items between them. No tools.
+
+
+
+
+
+
+
+
+
+
+✢ Orbiting… (2s · ↓ 11 tokens)
+                                  Fast mode disabled · usage credits exhausted
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← for ag…

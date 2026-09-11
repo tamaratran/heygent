@@ -1,0 +1,24 @@
+
+ ▐▛███▛█   Claude Code v2.1.268
+▝▜██████▀  Opus 5 with low effort · Claude Max
+  ▝▝ ▝▝    ~/probe · /rc
+
+
+❯ First say one sentence saying you will look. Then use Glob to list files
+  here. Then write 30 short numbered lines (one per line) about the sea, then
+  one closing sentence.
+
+  Finding *
+  ⎿  "*"
+
+
+
+
+
+
+✢ Clauding… (5s · ↓ 186 tokens)
+  tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux…
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← for ag…

@@ -157,6 +157,7 @@ class ConductorVoice(VoiceAgent):
             print("     (the Boss is mid-turn; these words go in now)",
                   flush=True)
         self._mirror_prompt(prompt)
+        shown = None
         work = asyncio.ensure_future(self.conductor.handle_user_message(
             prompt, source="voice", trace_id=turn_trace, utterance=spoken))
         try:
@@ -179,6 +180,9 @@ class ConductorVoice(VoiceAgent):
             # What the Boss noted for the voice's ears only; delivered
             # on the commentary channel when the delegation closes.
             self.pending_commentary = getattr(turn, "commentary", "") or ""
+            # The window shows the whole reply: it already drew the first
+            # sentence as it was written, and the trim below is for ears.
+            shown = answer
             said, self.boss_interim = self.boss_interim, ""
             if said:
                 # The first sentence was spoken while the tools ran; what
@@ -208,7 +212,7 @@ class ConductorVoice(VoiceAgent):
                             "Manager turn failed", severity="error",
                             exc_info=True, trace_id=turn_trace,
                             prompt=prompt[:300])
-        self._mirror_answer(answer)
+        self._mirror_answer(shown if shown is not None else answer)
         answer = answer[:voice_agent.ANSWER_CHAR_LIMIT]
         print(f"  ← manager: {answer or '(answered with the earlier words)'}",
               flush=True)
@@ -1209,6 +1213,7 @@ async def main() -> int:
                 asyncio.get_event_loop().run_in_executor(None, raise_by_pid)
 
             if isinstance(conductor.manager, PtyManagerBackend):
+                conductor.manager.on_draft = boss_page.mirror_draft
                 if window_bridge is not None:
                     conductor.manager.show_window = show_boss_window
                 else:
@@ -1235,6 +1240,8 @@ async def main() -> int:
                             exc_info=True)
             if boss_page is not None:
                 await boss_page.stop()
+            if isinstance(conductor.manager, PtyManagerBackend):
+                conductor.manager.on_draft = None
             boss_page, boss_window = None, None
 
     def boss_interim(text: str) -> None:

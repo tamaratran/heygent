@@ -53,6 +53,7 @@ from .boss_session import (CHILD_ACTIONS, BossSession, BossSessionStore,
 from .boss_tools import ORIENTATION, REQUIRED_TOOLS, SERVER_NAME
 from .manager import ManagerBackend, ManagerTurn, ToolCall, users_words
 from .observability import ObservabilityEvent, application_log
+from .screen_reply import ReplyDraft
 
 BOSS_TASK_ID = "boss"
 # Tools the Boss must not have: it conducts, it does not code. The same
@@ -176,6 +177,12 @@ class PtyManagerBackend(ManagerBackend):
         # What to do with the Boss's first sentence of a slow turn: the
         # voice side speaks it. None means nobody asked.
         self.on_interim: Callable[[str], None] | None = None
+        # The Boss's reply so far, whole, each time it grows - line by
+        # line off its screen, paragraphs from its transcript. The window
+        # draws it then, not when the turn ends. None means no window.
+        self.on_draft: Callable[[str], None] | None = None
+        self._draft: ReplyDraft | None = None
+        self._draft_task: asyncio.Task | None = None
         self._interim_said = False
         self._interim_task: asyncio.Task | None = None
         self._interim_for: list[_VoiceTurn] = []     # the turns it would speak for
@@ -226,6 +233,10 @@ class PtyManagerBackend(ManagerBackend):
     # start two workers" came 4.6 s into a turn that took 30 s more, and
     # the user heard nothing until the end.
     INTERIM_AFTER_S = 1.5
+    # How often the Boss's screen is read while it answers, for the
+    # window's line-by-line draft. A tmux capture is a few milliseconds;
+    # under cmux a read takes longer, and reads never overlap.
+    DRAFT_POLL_S = 0.25
 
     # -- ManagerBackend --------------------------------------------------------
     @property
@@ -627,75 +638,139 @@ class PtyManagerBackend(ManagerBackend):
                         else event.summary
                     self.record("user_message", {"text": text, "source": "typed"})
                     self._set_status("thinking")
+                elif self._answering():
+                    self._start_draft(event.summary)
             elif (event.detail or {}).get("tool"):
                 # A tool call is its own item (tool_started, from the
                 # bridge). Assistant prose is not recorded here: it is the
                 # reply, recorded once when the turn ends - recording it as
                 # it streamed put every answer on the timeline twice.
                 self._set_status("waiting_for_tool")
-            elif source == "" and event.summary.strip() \
-                    and not self._interim_said \
-                    and self.on_interim is not None:
-                # The Boss's first sentence of this turn. If the turn is
-                # still running a moment from now, it went off to run
-                # tools, and this sentence is what the user should hear
-                # meanwhile rather than silence.
-                #
-                # "This turn" is the utterances the session has READ and
-                # not answered. Not merely open: a queued utterance the
-                # session has not looked at yet cannot be what this
-                # sentence answers. Measured 2026-08-30 23:32:11-13Z:
-                # "Hey - what do you want done?" was answered and handed
-                # to the voice at 11.742, its prose line reached the
-                # watcher a tick later, and with a second utterance
-                # queued the interim spoke the same words at 13.242 -
-                # "Hey, what do you want done? Hey, what do you want
-                # done?". A sentence with no read, unanswered utterance
-                # behind it is a straggler from an answered turn (or
-                # the Boss talking to a pushed update); nothing to say.
-                answering = [t for t in self._turns
-                             if t.taken and not t.done.is_set()]
-                if answering:
-                    self._interim_said = True
-                    self._interim_for = answering
-                    self._interim_task = asyncio.get_event_loop().create_task(
-                        self._say_interim(event.summary, answering))
+            elif source == "" and event.summary.strip():
+                self._prose(event.summary, event.text or event.summary)
         elif event.type == "completed":
-            if not event.summary.strip():
-                # A turn end with nothing said - Claude Code emits one on
-                # startup and after some tool-only turns. Not an answer;
-                # ending the voice turn on it returned "" to the user.
-                # It IS the end of a pushed update's turn, though: left
-                # marked as pushing, every later update queued behind it
-                # until the next spoken turn - "never arrived", measured.
-                if self._pushes_open:
-                    self._finish_push()
-                return
-            answered = self._resolve_turns(event.summary)
-            self._answer_claims_interim()
-            source = "voice" if answered else \
-                "worker_update" if self._pushes_open else "typed"
-            self.record("boss_message", {"text": event.summary[:2000],
-                                         "source": source})
-            self._set_status("ready")
-            if self._pushes_open:
-                # What the Boss says back to a worker update is what the
-                # user should hear about that worker - measured: it wrote
-                # "Here's what PR fifty-nine does: ..." to an update and
-                # the user heard nothing, because a reply to a push was a
-                # timeline entry and it had used note_for_voice, the
-                # channel nobody hears. Unless tell_user already spoke.
-                if not self._told_user_in_push and self._conductor is not None:
-                    self._conductor.bus.emit(ObservabilityEvent(
-                        type="boss.tell_user", component="manager",
-                        manager_session_id=self.session_id,
-                        data={"text": event.summary[:600],
-                              "source": "worker_update"}))
-                self._finish_push()
+            self._on_turn_end(event)
         elif event.type == "failed":
             self._resolve_turns(f"That did not work: {event.error}")
             self.record("system_event", {"text": f"Boss failed: {event.error[:200]}"})
             self._set_status("failed")
+
+    def _answering(self) -> list[_VoiceTurn]:
+        return [t for t in self._turns if t.taken and not t.done.is_set()]
+
+    def _start_draft(self, said: str) -> None:
+        """The session has read an utterance: follow its reply on screen
+        for the window (asked 2026-09-10: "it's only after it finishes",
+        then "can I at least do line by line"). Words read into a turn
+        already being followed join that draft."""
+        if self.on_draft is None or self._draft is not None:
+            return
+        said = said[2:] if said.startswith("> ") else said
+        self._draft = draft = ReplyDraft(said)
+        if self.session_id and hasattr(self.runtime, "read_screen"):
+            self._draft_task = asyncio.get_event_loop().create_task(
+                self._follow_screen(self.session_id, draft))
+
+    async def _follow_screen(self, session_id: str, draft: ReplyDraft) -> None:
+        """Read the Boss's screen until its answer is in. A read that
+        fails ends the reading, not the draft: the transcript's
+        paragraphs still reach the window."""
+        try:
+            while self._draft is draft and self._answering():
+                screen = await self.runtime.read_screen(session_id)
+                if screen and self._draft is draft and self._answering():
+                    self._show_draft(draft.feed(screen))
+                await asyncio.sleep(self.DRAFT_POLL_S)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            application_log("manager", "boss.screen_read_failed",
+                            "the Boss's screen could not be read; the "
+                            "window gets its reply a paragraph at a time",
+                            severity="warning", exc_info=True)
+            return
+        if self._draft is draft:
+            self._draft = None
+
+    def _show_draft(self, text: str | None) -> None:
+        if text is None or self.on_draft is None:
+            return
+        try:
+            self.on_draft(text)
+        except Exception:
+            application_log("manager", "boss.draft_failed",
+                            "the window missed part of the Boss's reply",
+                            severity="warning", exc_info=True)
+
+    def _prose(self, summary: str, text: str) -> None:
+        """A paragraph the Boss has just written, mid-turn: committed to
+        the window's draft whole, and the first one spoken if the turn
+        runs long.
+
+        "This turn" is the utterances the session has READ and not
+        answered. Not merely open: a queued utterance the session has
+        not looked at yet cannot be what this sentence answers. Measured
+        2026-08-30 23:32:11-13Z: "Hey - what do you want done?" was
+        answered and handed to the voice at 11.742, its prose line
+        reached the watcher a tick later, and with a second utterance
+        queued the interim spoke the same words at 13.242 - "Hey, what
+        do you want done? Hey, what do you want done?". A sentence with
+        no read, unanswered utterance behind it is a straggler from an
+        answered turn (or the Boss talking to a pushed update); nothing
+        to show and nothing to say.
+        """
+        answering = self._answering()
+        if not answering:
+            return
+        if self.on_draft is not None:
+            if self._draft is None:
+                # Its user line was missed; the paragraphs still come.
+                self._draft = ReplyDraft()
+            self._show_draft(self._draft.commit(text))
+        if not self._interim_said and self.on_interim is not None:
+            # The Boss's first sentence of this turn. If the turn is
+            # still running a moment from now, it went off to run
+            # tools, and this sentence is what the user should hear
+            # meanwhile rather than silence.
+            self._interim_said = True
+            self._interim_for = answering
+            self._interim_task = asyncio.get_event_loop().create_task(
+                self._say_interim(summary, answering))
+
+    def _on_turn_end(self, event: AgentEvent) -> None:
+        if not event.summary.strip():
+            # A turn end with nothing said - Claude Code emits one on
+            # startup and after some tool-only turns. Not an answer;
+            # ending the voice turn on it returned "" to the user.
+            # It IS the end of a pushed update's turn, though: left
+            # marked as pushing, every later update queued behind it
+            # until the next spoken turn - "never arrived", measured.
+            if self._pushes_open:
+                self._finish_push()
+            return
+        answered = self._resolve_turns(event.summary)
+        self._answer_claims_interim()
+        if not self._answering():
+            self._draft = None           # the answer is in; the next is new
+        source = "voice" if answered else \
+            "worker_update" if self._pushes_open else "typed"
+        self.record("boss_message", {"text": event.summary[:2000],
+                                     "source": source})
+        self._set_status("ready")
+        if self._pushes_open:
+            # What the Boss says back to a worker update is what the
+            # user should hear about that worker - measured: it wrote
+            # "Here's what PR fifty-nine does: ..." to an update and
+            # the user heard nothing, because a reply to a push was a
+            # timeline entry and it had used note_for_voice, the
+            # channel nobody hears. Unless tell_user already spoke.
+            if not self._told_user_in_push and self._conductor is not None:
+                self._conductor.bus.emit(ObservabilityEvent(
+                    type="boss.tell_user", component="manager",
+                    manager_session_id=self.session_id,
+                    data={"text": event.summary[:600],
+                          "source": "worker_update"}))
+            self._finish_push()
 
     # How much of a line is compared with what was typed: the watcher
     # keeps 200 characters of a user line, and Claude Code can join
@@ -1219,6 +1294,7 @@ class PtyManagerBackend(ManagerBackend):
             if turn in self._turns:
                 self._turns.remove(turn)
             if not self._turns:
+                self._draft = None
                 if self._interim_task is not None and not self._interim_task.done():
                     self._interim_task.cancel()
                 self._interim_task = None

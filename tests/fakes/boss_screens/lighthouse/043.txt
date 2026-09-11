@@ -1,0 +1,24 @@
+  have stood on rocky headlands and lonely islands. They cast their beams
+  across dark water so sailors could find their way home. Before satellites and
+  radar, a single steady light could decide whether a ship reached the harbor or
+  broke apart on a hidden reef.
+
+  - The lens: The Fresnel lens, invented in 1822, used rings of prisms to bend
+    scattered light into one powerful beam that could be seen for miles.
+  - The keeper: Keepers trimmed wicks, wound clockwork, and polished glass
+    through long nights, often with only their families for company.
+  - The signature: Each lighthouse flashed its own pattern of light and dark, so
+    a navigator could tell exactly which coast lay ahead.
+
+  Most lighthouses today run on their own, and their keepers are long gone. Many
+  towers have become museums, inns, or quiet landmarks that people visit on
+  summer afternoons. Still, something about them stays with us. A lighthouse
+  doesn't chase anyone or call out; it simply stays lit and trusts that whoever
+  needs it will look up and see.
+
+✻ Cogitated for 8s · done 8:19 PM
+  tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux…
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

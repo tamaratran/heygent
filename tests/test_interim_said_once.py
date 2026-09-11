@@ -85,6 +85,17 @@ class TheInterimIsSaidOnce(unittest.TestCase):
     def test_no_interim_means_the_answer_as_is(self):
         self.assertEqual(self.answer("Merged.", ""), "Merged.")
 
+    def test_the_window_keeps_the_sentence_the_voice_already_said(self):
+        """The window drew the first sentence as it was written; the trim
+        is for ears, so the settled bubble still holds the whole reply."""
+        drawn = []
+        self.voice.mirror = type("M", (), {
+            "mirror_prompt": lambda s, text: None,
+            "mirror_answer": lambda s, text: drawn.append(text)})()
+        first = "Looking at PR 109 now."
+        self.answer(first + " It frees the worker slots.", first)
+        self.assertEqual(drawn, [first + " It frees the worker slots."])
+
 
 if __name__ == "__main__":
     unittest.main()

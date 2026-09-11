@@ -503,6 +503,102 @@ class TheBossRunsInAWindow(unittest.TestCase):
         self.assertEqual(heard, ["Starting two workers for you."])
         self.assertIn("Both are up", turn.reply)
 
+    def test_the_reply_reaches_the_window_as_it_is_written(self):
+        """Asked 2026-09-10: the window showed the Boss's reply only after
+        the turn ended. Each paragraph joins the draft as it lands, whole
+        - not the 300-character summary cards get."""
+        shown = []
+        self.backend.on_draft = shown.append
+        seen_before_end = []
+        long = "It is up. " + "x" * 400
+
+        async def slow_send(session_id, message):
+            self.runtime.sent.append((session_id, message))
+            for handler in list(self.runtime.handlers.get(session_id, [])):
+                handler(AgentEvent(type="progress", summary=f"> {message}",
+                                   detail={"source": "user_message"}))
+                handler(AgentEvent(type="progress",
+                                   summary="Starting a worker."))
+                handler(AgentEvent(type="progress", summary="create_task",
+                                   detail={"tool": "create_task"}))
+                handler(AgentEvent(type="progress", summary=long[:300],
+                                   text=long))
+            await asyncio.sleep(0.02)
+            seen_before_end.extend(shown)
+            for handler in list(self.runtime.handlers.get(session_id, [])):
+                handler(AgentEvent(type="completed", summary=long))
+        self.runtime.send = slow_send
+        asyncio.run(self.backend.handle("start a worker", self.conductor))
+        self.assertEqual(seen_before_end, ["Starting a worker.",
+                                           "Starting a worker.\n\n" + long])
+        self.assertEqual(shown, seen_before_end)
+
+    def test_the_reply_reaches_the_window_line_by_line(self):
+        """Asked 2026-09-10: "can I at least do line by line". Between the
+        transcript's paragraphs, the lines on the Boss's screen."""
+        shown = []
+        self.backend.on_draft = shown.append
+        self.backend.DRAFT_POLL_S = 0.005
+        box = ("\n" + "─" * 40 + "\n❯ \n" + "─" * 40 +
+               "\n  ⏵⏵ bypass permissions on\n")
+        screens = [
+            "❯ start a worker\n\n✻ Orbiting…" + box,
+            "❯ start a worker\n\n⏺ Starting a worker\n\n✻ Orbiting…" + box,
+            "❯ start a worker\n\n⏺ Starting a worker\n  on the login bug."
+            "\n\n✻ Orbiting…" + box,
+        ]
+        reads = []
+
+        async def read_screen(session_id):
+            reads.append(session_id)
+            return screens[min(len(reads) - 1, len(screens) - 1)]
+        self.runtime.read_screen = read_screen
+
+        async def send(session_id, message):
+            self.runtime.sent.append((session_id, message))
+            for handler in list(self.runtime.handlers.get(session_id, [])):
+                handler(AgentEvent(type="progress", summary=f"> {message}",
+                                   detail={"source": "user_message"}))
+            for _ in range(400):
+                if len(reads) >= len(screens) + 2:
+                    break
+                await asyncio.sleep(0.005)
+            said = "Starting a worker on the login bug."
+            for handler in list(self.runtime.handlers.get(session_id, [])):
+                handler(AgentEvent(type="progress", summary=said, text=said))
+                handler(AgentEvent(type="completed", summary=said))
+        self.runtime.send = send
+        asyncio.run(self.backend.handle("start a worker", self.conductor))
+        self.assertEqual(shown, ["Starting a worker",
+                                 "Starting a worker\non the login bug.",
+                                 "Starting a worker on the login bug."])
+
+    def test_prose_with_no_turn_behind_it_is_not_shown(self):
+        """The Boss talking to a pushed worker update has no bubble."""
+        shown = []
+        self.backend.on_draft = shown.append
+        asyncio.run(self.backend.warm(self.conductor))
+        for handlers in list(self.runtime.handlers.values()):
+            for handler in list(handlers):
+                handler(AgentEvent(type="progress", summary="Noted."))
+        self.assertEqual(shown, [])
+
+    def test_a_failing_window_does_not_break_the_turn(self):
+        def broken(text):
+            raise RuntimeError("page gone")
+        self.backend.on_draft = broken
+
+        async def send(session_id, message):
+            self.runtime.sent.append((session_id, message))
+            for handler in list(self.runtime.handlers.get(session_id, [])):
+                handler(AgentEvent(type="progress", summary=f"> {message}",
+                                   detail={"source": "user_message"}))
+                handler(AgentEvent(type="progress", summary="Done."))
+                handler(AgentEvent(type="completed", summary="Done."))
+        self.runtime.send = send
+        turn = asyncio.run(self.backend.handle("hi", self.conductor))
+        self.assertEqual(turn.reply, "Done.")
+
     def test_a_quick_turn_is_not_spoken_twice(self):
         heard = []
         self.backend.on_interim = heard.append

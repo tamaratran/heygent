@@ -79,6 +79,9 @@ class AgentEvent:
     # epoch starts a new sequence space. Empty means "unstamped" and is
     # compared as before.
     epoch: str = ""
+    # The whole of a prose line, where summary is cut for cards and logs.
+    # For a viewer drawing the reply as it is written; never recorded.
+    text: str = ""
 
     def __post_init__(self) -> None:
         if self.type not in EVENT_TYPES:
