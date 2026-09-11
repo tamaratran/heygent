@@ -318,7 +318,8 @@ def chosen_surface(override: str | None = None) -> str:
     return override or getattr(boss, "WORKER_SURFACE", "cmux")
 
 
-def build_boss(runtime, home: Path, mode: str, transport: str = "stdio"):
+def build_boss(runtime, home: Path, mode: str, transport: str = "stdio",
+               cli: str = "claude-code"):
     """The Boss: a visible session in the worker surface, or the invisible
     SDK call it used to be.
 
@@ -331,16 +332,30 @@ def build_boss(runtime, home: Path, mode: str, transport: str = "stdio"):
     transport is how the visible Boss reaches its tools: "http" is the
     conductor's own loopback MCP endpoint (nothing else runs); "stdio" is
     boss-mcp, the packaged helper, over the bridge socket.
+
+    cli is which CLI the visible Boss is: Claude Code, or Codex - hosted
+    by the runtime that hosts Codex workers, since that runtime is the
+    one that knows how to read Codex.
     """
     if mode != "visible":
         return ClaudeManagerBackend()
-    local = getattr(runtime, "runtimes", {}).get("local", runtime)
+    runtimes = getattr(runtime, "runtimes", {})
+    host = runtimes.get("local", runtime)
+    if cli == "codex":
+        host = runtimes.get("codex")
+        if host is None:
+            raise SystemExit("the Boss is set to Codex, and no codex CLI "
+                             "was found on PATH; install it or start with "
+                             "--boss-cli claude-code")
     return PtyManagerBackend(
-        local, home, home / "boss" / "tools.sock",
+        host, home, home / "boss" / "tools.sock",
         python=sys.executable, repo_root=HERE,
         turn_timeout=getattr(boss_mod, "MANAGER_TURN_TIMEOUT_S", 300.0),
         store=BossSessionStore(home), transport=transport,
-        session_settings=toast_hook(home))
+        # The turn toast is a Claude Code Stop hook; Codex has no place
+        # under a turn to draw one.
+        session_settings=toast_hook(home) if cli == "claude-code" else None,
+        cli=cli)
 
 
 def toast_python() -> str | None:
@@ -394,7 +409,8 @@ def build_conductor(home: Path,
                     worker_surface: str | None = None,
                     boss_mode: str = "visible",
                     boss_transport: str = "stdio",
-                    embedded_terminals: bool = False) -> GlobalConductor:
+                    embedded_terminals: bool = False,
+                    boss_cli: str = "claude-code") -> GlobalConductor:
     """Workers are always PTY-hosted: the window IS the live session, so it
     can be watched and typed into while the Conductor supervises it.
 
@@ -495,7 +511,7 @@ def build_conductor(home: Path,
                             surface_preference=preference,
                             idle_retire_s=getattr(boss, "IDLE_RETIRE_S", 0.0),
                             manager=build_boss(runtime, home, boss_mode,
-                                               boss_transport))
+                                               boss_transport, boss_cli))
     if isinstance(built.manager, PtyManagerBackend):
         built.boss_store = built.manager.store
     return built
@@ -607,6 +623,11 @@ async def main() -> int:
                         help="how the visible Boss reaches its tools: http "
                              "(the conductor's own loopback MCP endpoint) "
                              "or stdio (boss-mcp, the packaged helper)")
+    parser.add_argument("--boss-cli", choices=("claude-code", "codex"),
+                        default=getattr(boss, "BOSS_CLI", "claude-code"),
+                        help="which CLI the visible Boss is: claude-code "
+                             "(the default) or codex; boss.BOSS_CLI sets "
+                             "the default")
     parser.add_argument("--boss-ui", choices=("window", "none"),
                         default="window",
                         help="the Boss window: window (the voice-agent "
@@ -710,7 +731,8 @@ async def main() -> int:
                                 boss_mode=args.boss,
                                 boss_transport=args.boss_transport,
                                 embedded_terminals=args.boss_ui == "window"
-                                and surface != "cmux")
+                                and surface != "cmux",
+                                boss_cli=args.boss_cli)
     from conductor import turn_toast
     from conductor.jump import JumpServer
 

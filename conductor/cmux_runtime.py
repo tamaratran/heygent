@@ -478,14 +478,15 @@ class CmuxClaudeRuntime(TmuxClaudeRuntime):
     async def launch_session(self, task_id: str, working_directory: str,
                              argv: list[str], existing: set | None = None,
                              session_id: str | None = None,
-                             focus: bool = True) -> str:
+                             focus: bool = True,
+                             adopt_at_prompt: bool = False) -> str:
         name = session_name(task_id)
         if not focus:
             self._quiet().add(name)
         try:
             return await super().launch_session(
                 task_id, working_directory, argv, existing=existing,
-                session_id=session_id)
+                session_id=session_id, adopt_at_prompt=adopt_at_prompt)
         finally:
             self._quiet().discard(name)
 
