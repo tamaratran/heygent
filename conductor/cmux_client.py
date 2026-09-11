@@ -156,6 +156,11 @@ class CmuxClient:
     async def focus_surface(self, surface_id: str) -> None:
         await self._run("focus-pane", "--pane", surface_id)
 
+    async def close_surface(self, workspace_id: str,
+                            surface_id: str) -> None:
+        await self._run("close-surface", "--workspace", workspace_id,
+                        "--surface", surface_id)
+
     async def send(self, surface_id: str, text: str,
                    enter: bool = True) -> None:
         """Type into one surface. Addressed by id, never by "whichever is

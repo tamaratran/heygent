@@ -26,7 +26,7 @@ from .capabilities import capability_block
 from .observability import ObservabilityEvent, application_log
 from .task_types import Task
 
-MANAGER_PROMPT_VERSION = "manager-v24"
+MANAGER_PROMPT_VERSION = "manager-v25"
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts/manager.md"
 
 _FALLBACK_PROMPT = (
@@ -73,12 +73,18 @@ def load_manager_prompt() -> str:
     return (body or text).strip() or _FALLBACK_PROMPT
 
 
-def _serialize(result) -> str:
+def _serialize(result, watch_url=None) -> str:
+    """watch_url, when the host has one, maps a task id to the loopback
+    link that focuses that worker's workspace; it rides on every task the
+    Boss is handed, so the Boss can print it under a reply that
+    delegated."""
     if result is None:
         return "ok"
     if isinstance(result, Task):
         result = {"task_id": result.id, "project_id": result.project_id,
                   "title": result.title, "status": result.status}
+        if watch_url is not None:
+            result["watch"] = watch_url(result["task_id"])
     if isinstance(result, list):
         # Stack position travels with any list of tasks, so "the second one"
         # resolves from a tool result the same way it does from the prompt's
@@ -94,6 +100,8 @@ def _serialize(result) -> str:
                 continue
             row = {"task_id": t.id, "project_id": t.project_id,
                    "title": t.title, "status": t.status, "goal": t.goal}
+            if watch_url is not None:
+                row["watch"] = watch_url(t.id)
             if t.id in places:
                 nth, total = places[t.id]
                 row["on_screen"] = f"{nth} of {total}"

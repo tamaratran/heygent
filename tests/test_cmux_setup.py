@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -206,6 +208,47 @@ class StartupRefusesRatherThanDegrades(unittest.IsolatedAsyncioTestCase):
                         new=mock.AsyncMock()) as looked:
             await conduct.preflight_surface()
         looked.assert_not_awaited()
+
+
+class InstallingTheDelegationSidebar(unittest.TestCase):
+    """The sidebar file rides with the repo and is copied where cmux
+    reads custom sidebars - only when its content changed, so cmux's
+    hot-reload is not poked on every launch."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.dest = self.tmp / "sidebars" / "conductor.swift"
+
+    def test_a_fresh_machine_gets_the_file(self):
+        self.assertTrue(cmux_setup.install_sidebar(dest=self.dest))
+        self.assertEqual(self.dest.read_text(),
+                         cmux_setup.SIDEBAR_SOURCE.read_text())
+
+    def test_an_unchanged_file_is_left_alone(self):
+        cmux_setup.install_sidebar(dest=self.dest)
+        before = self.dest.stat().st_mtime_ns
+        self.assertFalse(cmux_setup.install_sidebar(dest=self.dest))
+        self.assertEqual(self.dest.stat().st_mtime_ns, before)
+
+    def test_a_newer_repo_copy_replaces_an_older_install(self):
+        self.dest.parent.mkdir(parents=True)
+        self.dest.write_text("Text(\"old\")\n")
+        self.assertTrue(cmux_setup.install_sidebar(dest=self.dest))
+        self.assertEqual(self.dest.read_text(),
+                         cmux_setup.SIDEBAR_SOURCE.read_text())
+
+    def test_a_machine_where_it_cannot_be_written_still_boots(self):
+        """Best effort: the sidebar is decoration, workers are the job."""
+        with mock.patch("conductor.observability.application_log") as told:
+            self.assertFalse(cmux_setup.install_sidebar(
+                source=self.tmp / "missing.swift", dest=self.dest))
+        told.assert_called_once()
+
+    def test_the_repo_copy_exists_and_is_a_view_expression(self):
+        text = cmux_setup.SIDEBAR_SOURCE.read_text()
+        self.assertIn("VStack", text)
+        self.assertIn("workspace.select", text)
 
 
 if __name__ == "__main__":

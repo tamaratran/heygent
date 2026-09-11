@@ -5,6 +5,70 @@ description: How to run and end-to-end test the voice-agent macOS app (conduct.s
 
 # Testing voice-agent on a macOS VM (no physical mic)
 
+## cmux terminal hyperlinks (OSC 8 / bare URLs)
+- cmux/Ghostty recognizes both OSC 8 hyperlinks and bare URLs, but only on
+  **cmd+click**; a plain click in a shell does nothing, and no hover
+  underline is visible in screenshots (cmd-hover may underline, but a
+  screenshot can't capture it while the modifier is held).
+- Cmd+click opens the URL in an **internal cmux browser pane** (right
+  split of the same workspace), not a new workspace or external browser.
+  The pane is discoverable via `cmux list-pane-surfaces` (shows e.g.
+  `surface:NN  127.0.0.1`) and closable with
+  `cmux close-surface --workspace <ws> --surface <id>` (requires the
+  explicit --workspace) — so click + CLI auto-close works as a "button".
+- Inside Claude Code (mouse-reporting TUI): Bash-tool output is collapsed
+  ("ran 1 shell command") — click the summary to expand. In the expanded
+  output the OSC 8 escape survives: cmd+click on the label opens the
+  hidden target. Plain URLs in assistant reply text are rendered blue and
+  cmd+click also opens the internal pane. A **plain click** on a link in
+  Claude Code opens it in the **default macOS browser (Safari)** instead.
+- When crafting OSC 8 test strings, avoid quoting through `cmux send`
+  (escapes get mangled) — write a script file with printf '\033]8;;URL\033\\'
+  and run it.
+- macOS may pop TCC permission dialogs ("cmux would like to access ...")
+  on first browser-pane use; dismiss with Don't Allow.
+
+## Inline watch links (conductor/watch_link.py)
+- The watch server logs `watch.server_started` with its port; the port is
+  persisted in `~/.voice-conductor/boss/watch.port` and reused on restart.
+- Verify a click landed by grepping the run log for `watch.link_opened`
+  with the task_id — a cmd+click can silently miss (transcript reflows
+  between screenshot and click); always re-screenshot right before
+  clicking and confirm the log event afterwards.
+- `curl http://127.0.0.1:<port>/watch/task_bogus` is a safe smoke test:
+  expect 204 + `watch.link_opened` then `watch.open_failed` (no such task).
+- Clicking a bottom notification card's BODY navigates cmux to that
+  worker's workspace — click only the small X to dismiss.
+
+## cmux custom (interpreted Swift) sidebars
+- Installed at `~/.config/cmux/sidebars/*.swift`; manage with
+  `cmux sidebar validate|select|reload <name>`. `validate` passing does NOT
+  mean it renders: the interpreter skips unsupported expressions silently
+  (blank sections, no inline error).
+- Known-unsupported in the interpreter: optional-coalescing `??` inside
+  closures (e.g. `($0.description ?? "").hasPrefix(...)` renders nothing).
+  Use direct optional member access (`$0.description.hasPrefix(...)`) and
+  `if let` for optionals instead.
+- `w.agents` is absent on every workspace on this VM (probe with a tiny
+  sidebar dumping `if let agents = w.agents`), so any spinner/checkmark
+  keyed on agent status never shows; only fallback branches render.
+- A completed worker's cmux workspace is closed when the Boss calls
+  `complete_task` (~3s after task.completed), so "completed" sidebar states
+  are transient. To verify done-state rendering, run the same commands
+  dress() writes on a surviving managed workspace:
+  `cmux set-progress 1.0 --label "reported back to Boss" --workspace <id>`.
+- The first dress at task.created races workspace listing; since ef1e5fc
+  WorkspaceDecor retries a missed dress (3x, 2s apart), so the bar should be
+  titled with a spinner within ~10s — `workspace.dress_missed` in the log
+  means all retries lost the race.
+- Trivial tasks (haiku/limerick) complete in ~10-15s and the workspace closes
+  ~3s later — too fast to screenshot any sidebar state. Use a task that reads
+  source and writes 100+ lines to keep the "working" state up for minutes.
+- If a delegation is refused with `boss.bridge_refused` after a conductor
+  restart, kill the stale adopted boss claude process
+  (`pgrep -f voice-conductor/boss`) and restart conduct.sh; the fresh Boss
+  gets a valid bridge token.
+
 ## One-time environment setup
 - `brew install tmux uv` and install Claude Code CLI (`~/.local/bin/claude`).
 - Headless Claude auth: store the Anthropic key in the keychain and point
@@ -95,6 +159,22 @@ description: How to run and end-to-end test the voice-agent macOS app (conduct.s
   — the Boss send_to_task's it verbatim; if the worker ignores it, the Boss
   flags and corrects it on the completion push.
 - "Great, thank you" makes the Boss complete_task and close things out.
+
+## Overlay delegation bar (HUD strip above the voice capsule)
+- The bar sits directly above the voice capsule (~y 650 of 768 on this VM);
+  hover effects are subtle (bg 253→249, border darkens, chevron bolds) —
+  prove them by pixel-diffing two zoom screenshots, not by eye.
+- The live verb+seconds render AFTER the title in one truncating line, so
+  they are usually cut off; a very short task title still may not show the
+  seconds. Verb rotates every 8s (Deliberating/Chipping away/Toiling/
+  Beavering away) — capture two zooms 9s apart to prove liveness.
+- Settled (green/red) rows retire after 45s; screenshot within that window.
+- Restart replay reads persisted subagent status from
+  ~/.voice-conductor/projects/<proj>/tasks/<task>/subagent.json; compare it
+  against STATE_GLYPHS in conductor/delegation.py when the bar fails to
+  reappear.
+- To make a worker linger for hover/click tests, ask for a ~200-line study
+  task "read the source carefully first" — lives several minutes.
 
 ## Gotchas found while retesting fixes
 - Workers on ask-then-wait branches raise questions via Claude Code's

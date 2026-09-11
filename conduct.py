@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import json
 import os
 import shutil
@@ -72,6 +73,7 @@ from conductor.pty_manager import PtyManagerBackend
 from conductor.global_conductor import GlobalConductor
 from conductor.gui_permissions import ask_for_missing_grants
 from conductor.plain_text import plain_text
+from conductor.watch_link import WatchLinkServer
 from conductor.notifications import (NotificationService,
                                      TaskNotification, concise)
 from conductor.notification_panel import notice_payload
@@ -101,6 +103,25 @@ def _load_prompt(name: str, fallback: str) -> str:
         return fallback
     _, _, body = text.partition("\n---\n")
     return (body or text).strip() or fallback
+
+
+async def open_watched_task(conductor: GlobalConductor,
+                            task_id: str) -> None:
+    """A clicked watch link: focus that worker's workspace, then close the
+    transient browser pane the click opened (cmux answers a cmd+click by
+    opening the URL in its own pane; the 204 leaves it blank)."""
+    await conductor.focus_task(task_id)
+    from conductor.cmux_client import CmuxClient, CmuxUnavailable
+    client = CmuxClient()
+    try:
+        for workspace in await client.list_workspaces():
+            for surface in await client.list_surfaces(workspace.id):
+                if surface.title.strip().startswith("127.0.0.1"):
+                    await client.close_surface(workspace.id, surface.id)
+    except (CmuxUnavailable, RuntimeError):
+        application_log("ui", "watch.pane_close_failed",
+                        "the transient watch pane could not be closed",
+                        severity="warning", exc_info=True, task_id=task_id)
 
 
 class ConductorVoice(VoiceAgent):
@@ -734,8 +755,18 @@ async def main() -> int:
     # same cards the overlay draws.
     toast_rows: dict[str, dict] = {}
     bridge = None
+    watch = None
     if isinstance(conductor.manager, PtyManagerBackend):
         from conductor.claude_manager import _manager_tools, _serialize
+        # The watch link: every task the Boss is handed carries a loopback
+        # URL, the Boss prints it under a reply that delegated, and a
+        # click on it focuses that worker's workspace. cmd+click in cmux
+        # opens a transient browser pane on the empty 204; it is closed
+        # again right after the jump.
+        watch = WatchLinkServer(home, functools.partial(
+            open_watched_task, conductor))
+        await watch.start()
+        _serialize = functools.partial(_serialize, watch_url=watch.url_for)
         if args.boss_transport == "http":
             # The conductor answers MCP itself, on the loopback interface;
             # the URL is the Boss session's business, not the user's. It
@@ -1036,6 +1067,22 @@ async def main() -> int:
                                         on_supersede=on_supersede,
                                         on_activity=on_activity,
                                         on_resolve=on_resolve)
+    # The sidebar follows the same events: worker workspaces titled with
+    # their task's words, coloured by state, flashed when the Boss routes
+    # words into them. Dressing goes to the local host runtime - the one
+    # that owns the workspaces; on a tmux host it is a no-op.
+    from conductor.workspace_decor import WorkspaceDecor
+    local_runtime = getattr(conductor.runtime, "runtimes",
+                            {}).get("local", conductor.runtime)
+    decor = WorkspaceDecor(conductor, local_runtime)
+    # The delegation sidebar: the Boss at the top, a clickable bar per
+    # session it delegated to, a loading indicator until each reports
+    # back. Shown once on first install; after that which sidebar shows
+    # is the user's choice (right-click the sidebar button).
+    from conductor.cmux_setup import SIDEBAR_DEST, install_sidebar
+    first_install = not SIDEBAR_DEST.exists()
+    if install_sidebar() and first_install:
+        local_runtime.select_sidebar("conductor")
     # Telemetry mutates Activity Center rows in place without popping:
     # refresh the bell on progress, throttled so a chatty worker cannot
     # flood the pipe.
@@ -1330,10 +1377,13 @@ async def main() -> int:
             reader.cancel()
         stall_monitor.cancel()
         notifications.close()
+        decor.close()
         if hasattr(conductor.manager, "close"):
             await conductor.manager.close()
         if bridge is not None:
             await bridge.stop()
+        if watch is not None:
+            await watch.stop()
         if boss_page is not None:
             await boss_page.stop()
         if boss_window is not None and boss_window.returncode is None:

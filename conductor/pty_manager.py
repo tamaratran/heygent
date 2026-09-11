@@ -53,6 +53,7 @@ from .boss_session import (CHILD_ACTIONS, BossSession, BossSessionStore,
 from .boss_tools import ORIENTATION, REQUIRED_TOOLS, SERVER_NAME
 from .manager import ManagerBackend, ManagerTurn, ToolCall, users_words
 from .observability import ObservabilityEvent, application_log
+from .watch_link import without_watch_links
 
 BOSS_TASK_ID = "boss"
 # Tools the Boss must not have: it conducts, it does not code. The same
@@ -512,6 +513,14 @@ class PtyManagerBackend(ManagerBackend):
         self.session_id = await self.runtime.launch_session(
             BOSS_TASK_ID, str(self.boss_dir), argv, existing=existing,
             session_id=boss_sid, focus=False)
+        # The Boss's workspace announces itself in the sidebar: named,
+        # pinned to the top, its own colour - the origin every routing
+        # starts from, distinct at a glance from the workers it routes to.
+        from .tmux_runtime import session_name
+        if hasattr(self.runtime, "dress"):
+            await asyncio.to_thread(self.runtime.dress,
+                                    session_name(BOSS_TASK_ID),
+                                    title="Boss", state="boss", pin=True)
         # Captured the moment it exists, not at the end of a turn: this
         # is what a restart resumes.
         if record.provider_session_id != self.session_id:
@@ -643,6 +652,7 @@ class PtyManagerBackend(ManagerBackend):
                 self._prose(event.summary, event.text or event.summary)
         elif event.type == "completed":
             self._on_turn_end(event)
+
         elif event.type == "failed":
             self._resolve_turns(f"That did not work: {event.error}")
             self.record("system_event", {"text": f"Boss failed: {event.error[:200]}"})
@@ -703,7 +713,7 @@ class PtyManagerBackend(ManagerBackend):
             if self._pushes_open:
                 self._finish_push()
             return
-        answered = self._resolve_turns(event.summary)
+        answered = self._resolve_turns(without_watch_links(event.summary))
         self._answer_claims_interim()
         source = "voice" if answered else \
             "worker_update" if self._pushes_open else "typed"
@@ -721,7 +731,7 @@ class PtyManagerBackend(ManagerBackend):
                 self._conductor.bus.emit(ObservabilityEvent(
                     type="boss.tell_user", component="manager",
                     manager_session_id=self.session_id,
-                    data={"text": event.summary[:600],
+                    data={"text": without_watch_links(event.summary)[:600],
                           "source": "worker_update"}))
             self._finish_push()
 
