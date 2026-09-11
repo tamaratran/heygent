@@ -94,7 +94,7 @@ class ThePage(unittest.TestCase):
         status, page = run(go())
         self.assertEqual(status, "200 OK")
         self.assertIn("EventSource", page)
-        self.assertIn("Message the Boss", page)
+        self.assertIn("Message Heygent", page)
 
     def test_the_page_follows_only_a_reader_at_the_bottom(self):
         """Measured on 2026-09-01: the chat yanked to the end on every

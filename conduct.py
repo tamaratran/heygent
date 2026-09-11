@@ -18,7 +18,7 @@
 # ]
 # ///
 
-"""The Voice Conductor: hold Fn, talk, and manage many coding agents at once.
+"""Heygent: hold Fn, talk, and manage many coding agents at once.
 
 Same push-to-talk front end as voice_agent.py - GPT Live is the ears and the
 mouth - but every request lands in conductor.handle_user_message(), where a
@@ -283,7 +283,7 @@ def notes_between_turns(agent):
 
 
 def raise_boss_window(pid: int) -> None:
-    """Put the voice-agent window in front - its process, by pid.
+    """Put the Heygent window in front - its process, by pid.
 
     The pid we hold is uv's wrapper, and the wrapper owns no window:
     System Events can only front the descendant that does (measured
@@ -609,7 +609,7 @@ async def main() -> int:
                              "or stdio (boss-mcp, the packaged helper)")
     parser.add_argument("--boss-ui", choices=("window", "none"),
                         default="window",
-                        help="the Boss window: window (the voice-agent "
+                        help="the Boss window: window (the Heygent "
                              "app - spoken turns drawn live, typing goes "
                              "to the same Boss - the default) or none")
     parser.add_argument("--boss-window", choices=("bridge", "http"),
@@ -1158,7 +1158,7 @@ async def main() -> int:
     agent = ConductorVoice(api_key, ui, conductor,
                            args.reply or boss.REPLY_MODE)
 
-    # The Boss window: the voice-agent app over this same conductor.
+    # The Boss window: the Heygent app over this same conductor.
     # Spoken turns are mirrored onto its page as they happen; what is
     # typed into it goes to the same Boss the voice talks to. Failing to
     # open it never stops the voice - the window is a view, not the Boss.

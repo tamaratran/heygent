@@ -64,7 +64,7 @@ ASSET_TYPES = {".js": "application/javascript", ".css": "text/css"}
 PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>voice-agent</title>
+<title>Heygent</title>
 <link rel="stylesheet" href="assets/xterm.css">
 <script src="assets/xterm.js"></script>
 <script src="assets/xterm-addon-fit.js"></script>
@@ -407,7 +407,7 @@ PAGE = """<!doctype html>
 </style>
 <header><div class="row">
   <span class="light"></span>
-  <span class="name">Boss</span>
+  <span class="name">Heygent</span>
   <span class="state" id="state"></span>
 </div></header>
 <div id="chrome">
@@ -435,7 +435,7 @@ PAGE = """<!doctype html>
     <span id="verb"></span><span class="doing" id="doing"></span></div>
   <div class="row">
     <input id="text" type="text" autocomplete="off"
-           placeholder="Message the Boss" autofocus>
+           placeholder="Message Heygent" autofocus>
     <button id="send" type="submit" title="Send">↑</button>
     <button id="stop" type="button" title="Stop">■</button>
   </div>
@@ -804,7 +804,7 @@ function approvalCard(msg) {
       ["accept", "1.", "Yes", "accept"],
       ["acceptForSession", "2.",
        "Yes, and don't ask again this session", "session"],
-      ["decline", "3.", "No, and tell the Boss what to do differently",
+      ["decline", "3.", "No, and tell Heygent what to do differently",
        "decline"]]) {
     const b = document.createElement("button");
     b.className = cls;

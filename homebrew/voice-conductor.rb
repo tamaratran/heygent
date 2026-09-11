@@ -1,4 +1,4 @@
-# The Homebrew formula for the Voice Conductor. It lives here so the tap
+# The Homebrew formula for Heygent. It lives here so the tap
 # repo can copy it verbatim; Homebrew reads formulae from a tap, not from
 # the app repo. See homebrew/README.md for setting the tap up.
 class VoiceConductor < Formula

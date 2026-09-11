@@ -209,7 +209,7 @@ class PtyManagerBackend(ManagerBackend):
         # user could not even quit it, because the Boss lives in it.
         self._voice_turns = 0
         self._window_shown = False
-        # How the Boss's own window is raised. With the voice-agent window
+        # How the Boss's own window is raised. With the Heygent window
         # open the Boss has no cmux workspace to select, so the launcher
         # sets this to raise that window instead; without it, the
         # runtime's bring_forward (cmux) is the answer.
@@ -387,7 +387,7 @@ class PtyManagerBackend(ManagerBackend):
         in every turn and is static for a run, so it belongs here."""
         from .claude_manager import load_manager_prompt
         self.boss_dir.mkdir(parents=True, exist_ok=True)
-        parts = ["# You are the Boss\n\n" + load_manager_prompt(), ORIENTATION]
+        parts = ["# You are Heygent, the Boss\n\n" + load_manager_prompt(), ORIENTATION]
         if conductor is not None:
             try:
                 from .capabilities import capability_block

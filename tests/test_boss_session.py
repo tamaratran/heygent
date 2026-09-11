@@ -364,7 +364,7 @@ class TheBossRunsInAWindow(unittest.TestCase):
     def test_its_instructions_explain_how_it_is_running(self):
         asyncio.run(self.backend.handle("hi", self.conductor))
         text = (self.home / "boss" / "CLAUDE.md").read_text()
-        self.assertTrue(text.startswith("# You are the Boss"))
+        self.assertTrue(text.startswith("# You are Heygent, the Boss"))
         self.assertIn("mcp__boss__", text)
         self.assertIn("Never invent a task, session or approval id", text)
 

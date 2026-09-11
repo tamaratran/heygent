@@ -1,6 +1,6 @@
-"""voice-agent as a real macOS application.
+"""Heygent as a real macOS application.
 
-Builds `Voice Agent.app` - the bundle Finder, the Dock and Spotlight
+Builds `Heygent.app` - the bundle Finder, the Dock and Spotlight
 know - around the repo's own launcher. The bundle is a shell, not a
 copy: its executable execs `conduct.sh` where the repo lives, so a
 `git pull` updates the app with no rebuild. What the bundle adds is
@@ -10,7 +10,7 @@ to, instead of "Python".
 
 Build it:
 
-    python3 -m conductor.app_bundle              # ./dist/Voice Agent.app
+    python3 -m conductor.app_bundle              # ./dist/Heygent.app
     python3 -m conductor.app_bundle --install    # /Applications
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-APP_NAME = "Voice Agent"
+APP_NAME = "Heygent"
 BUNDLE_ID = "ai.voice-agent.conductor"
 
 # Finder launches with almost no PATH; the launcher restores the places
@@ -52,9 +52,9 @@ def info_plist(repo: Path) -> dict:
         "LSMinimumSystemVersion": "12.0",
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription":
-            "Voice Agent listens while you hold the push-to-talk key.",
+            "Heygent listens while you hold the push-to-talk key.",
         "NSAppleEventsUsageDescription":
-            "Voice Agent raises its own window and terminal sessions.",
+            "Heygent raises its own window and terminal sessions.",
     }
 
 
@@ -89,7 +89,7 @@ def make_icns(png: Path, icns: Path) -> bool:
 
 
 def build_bundle(repo: Path, dest: Path) -> Path:
-    """Assemble `Voice Agent.app` under dest and return its path."""
+    """Assemble `Heygent.app` under dest and return its path."""
     repo = repo.resolve()
     conduct = repo / "conduct.sh"
     if not conduct.is_file():
@@ -122,7 +122,7 @@ def build_bundle(repo: Path, dest: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="build Voice Agent.app around this repo")
+        description="build Heygent.app around this repo")
     parser.add_argument("--install", action="store_true",
                         help="build into /Applications instead of ./dist")
     parser.add_argument("--dest", type=Path, default=None,
