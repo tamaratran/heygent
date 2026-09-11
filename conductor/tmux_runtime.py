@@ -848,14 +848,17 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             # reached no one. Measured: a Gemini worker showed Working for
             # four minutes on its sign-in screen.
             self._handle_startup_prompts(sess, pane)
+            # Asked once someone is listening: the question is kept for
+            # the first subscriber, not spent on nobody.
             if self.adapter.startup_dialog(pane) == "auth" and \
-                    not sess.state.get("auth_asked"):
+                    sess.handlers and not sess.state.get("auth_asked"):
                 sess.state["auth_asked"] = True
                 sess.status = "running"
                 self._emit(sess, AgentEvent(
                     type="needs_input",
                     question=f"{self.adapter.display} needs you to sign in - "
-                             "open its window"))
+                             "open its window",
+                    detail={"reason": "auth"}))
             return False
         if sess.jsonl_path is None:
             # No transcript to tail: the screen is the transcript. The
@@ -1155,7 +1158,7 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         """Supervise a session whose id is already known: wait for its
         prompt, watch the transcript it will write, and read on from the
         end of one it already wrote."""
-        path = project_dir / f"{session_id}.jsonl" \
+        path = self.adapter.transcript_for(working_directory, session_id) \
             if project_dir is not None else None
         sess = _TmuxSession(task_id=task_id, name=name,
                             working_directory=working_directory,
@@ -1307,6 +1310,8 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                             f"{sess.name}: the user's draft is back in the box",
                             severity="debug", draft=draft[:80])
         sess.status = "running"
+        for event in self.adapter.sent(message, sess.state):
+            self._emit(sess, event)
 
     # How long a sent message may sit in the box before its Enter is
     # pressed again, and how long the second one gets before the send
@@ -1664,6 +1669,11 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             await self._off_loop(self._handle_startup_prompts, sess)
             pane = await self._pane(sess.name)
             if self.adapter.prompt_ready(pane):
+                sess.ready.set()
+                return
+            if self.adapter.startup_dialog(pane) == "auth":
+                # No prompt is coming until someone signs in; the watcher
+                # asks them the moment it is followed, not at the deadline.
                 sess.ready.set()
                 return
             if not await self._off_loop(self._alive, sess.name):

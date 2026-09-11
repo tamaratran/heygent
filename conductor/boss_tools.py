@@ -196,16 +196,18 @@ DESCRIPTIONS = {
 }
 
 # What the Boss is told about being a Boss, on top of the manager prompt.
-# The tool names alone do not explain the product; this does.
-ORIENTATION = """
+# The tool names alone do not explain the product; this does. Written
+# for whichever CLI hosts the Boss: it names that CLI, and the way that
+# CLI spells an MCP tool.
+_ORIENTATION = """
 ## How you are running
 
-You are the user's Boss: a persistent Claude Code session that supervises
+You are the user's Boss: a persistent {cli} session that supervises
 coding workers rather than doing the coding yourself. The user talks to
 you by voice and by typing into this window; both are turns of this one
 conversation.
 
-Your orchestration tools are the `boss` MCP server (`mcp__boss__*`):
+Your orchestration tools are the `boss` MCP server{tools}:
 finding projects, starting workers (create_task), inspecting them
 (inspect_task, list_subagents, list_open_sessions), messaging them
 (send_to_task), opening their windows (focus_task), and approving or
@@ -240,3 +242,13 @@ screen (with the ordinals the user refers to), `inspect_task` for one
 worker. Your workers' turns are typed into this session as they happen
 ("Worker update · ..."), so you are told without asking.
 """
+
+
+def orientation(cli: str = "Claude Code", tool_prefix: str | None = "mcp__boss__") -> str:
+    """The orientation for a Boss hosted by `cli`, whose MCP tools are
+    spelled `tool_prefix` + name (None: the CLI shows them by plain name)."""
+    tools = f" (`{tool_prefix}*`)" if tool_prefix else ""
+    return _ORIENTATION.format(cli=cli, tools=tools)
+
+
+ORIENTATION = orientation()

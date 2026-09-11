@@ -1,20 +1,22 @@
 """boss-mcp: the Boss's orchestration tools, as an MCP server.
 
-Started BY Claude Code, as the MCP server named "boss" in the Boss
-session's MCP config. It has no conductor of its own and holds no state;
-every call is forwarded over the bridge socket to conduct.py, where the
-conductor is. It is an adapter, disposable: if it dies, Claude Code
-restarts it, and nothing about the Boss, its timeline or its workers has
-moved.
+Started BY the CLI hosting the Boss (Claude Code, Codex, Gemini CLI,
+...), as the MCP server named "boss" in the Boss session's MCP config.
+It has no conductor of its own and holds no state; every call is
+forwarded over the bridge socket to conduct.py, where the conductor is.
+It is an adapter, disposable: if it dies, the CLI restarts it, and
+nothing about the Boss, its timeline or its workers has moved.
 
     Boss session --stdio--> this --authenticated unix socket--> BossBridge
 
 Identity is the process's, not the model's. The credential and the Boss
 session id arrive in this process's environment, put there by the
-Conductor when it wrote the session's MCP config; the model supplies tool
-arguments only. On start the server announces itself to the bridge -
-protocol version, the tools it registered - and the Conductor will not
-call the Boss ready until it has.
+Conductor when it wrote the session's MCP config - or, for a CLI whose
+MCP config is a command-line override anyone can `ps`, in a file only
+the user can read (--token-file); the model supplies tool arguments
+only. On start the server announces itself to the bridge - protocol
+version, the tools it registered - and the Conductor will not call the
+Boss ready until it has.
 
     boss-mcp --version                      protocol version, for the gate
     boss-mcp --socket <path> --list         the tools it would offer
@@ -102,6 +104,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--socket", help="the BossBridge socket conduct.py serves")
     parser.add_argument("--tools", default="",
                         help="comma-separated subset of tool names")
+    parser.add_argument("--token-file",
+                        help="read the credential from this file instead of "
+                             f"${ENV_TOKEN} (a CLI whose MCP config is not private)")
+    parser.add_argument("--boss-id", default="",
+                        help=f"the Boss session id, instead of ${ENV_SESSION}")
     parser.add_argument("--list", action="store_true",
                         help="print the tools and exit")
     parser.add_argument("--version", action="store_true",
@@ -114,7 +121,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--socket is required")
     names = tuple(n for n in args.tools.split(",") if n) or tuple(SCHEMAS)
     token = os.environ.get(ENV_TOKEN, "")
-    boss_id = os.environ.get(ENV_SESSION, "")
+    if args.token_file:
+        try:
+            with open(args.token_file, encoding="utf-8") as handle:
+                token = handle.read().strip()
+        except OSError as exc:
+            parser.error(f"--token-file: {exc}")
+    boss_id = args.boss_id or os.environ.get(ENV_SESSION, "")
     server = build_server(args.socket, names, token, boss_id)
     if args.list:
         for tool in asyncio.run(server.list_tools()):

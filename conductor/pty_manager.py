@@ -50,24 +50,16 @@ from typing import Callable
 from .agent_events import AgentEvent
 from .boss_session import (CHILD_ACTIONS, BossSession, BossSessionStore,
                            input_summary, new_boss_id, output_summary)
-from .boss_tools import ORIENTATION, REQUIRED_TOOLS, SERVER_NAME
+from .boss_tools import REQUIRED_TOOLS, SERVER_NAME, orientation
+from .cli_adapter import BossSpec, ClaudeCodeAdapter, CliAdapter
 from .manager import ManagerBackend, ManagerTurn, ToolCall, users_words
 from .observability import ObservabilityEvent, application_log
 
 BOSS_TASK_ID = "boss"
-# Tools the Boss must not have: it conducts, it does not code. The same
-# list the SDK backend disallowed.
-DISALLOWED = ("Bash", "Read", "Edit", "Write", "Glob", "Grep",
-              "NotebookEdit", "Task", "Agent", "WebFetch", "WebSearch",
-              "AskUserQuestion")
-# "Agent" is what Claude Code 2.1.250 calls the subagent tool ("Task" in
-# older builds); a Boss with it could spawn workers the Conductor never
-# hears of. Both names are refused. "MultiEdit" is gone from current
-# builds (folded into "Edit", which stays denied); naming it makes
-# Claude Code warn that the deny rule matches no known tool.
-# "AskUserQuestion" renders an option menu in the pane; the Boss's answers
-# arrive as typed text, which moves the highlight but never submits, and
-# the turn hangs unread. Denied, it asks in prose like everything else.
+# Tools a Claude Code Boss must not have: it conducts, it does not code.
+# The list lives with the adapter now (each CLI spells its deny list its
+# own way); the name stays for what imports it.
+DISALLOWED = ClaudeCodeAdapter.BOSS_DISALLOWED
 # How the Boss starts (asked 2026-09-10): Opus, low reasoning, fast mode, focus
 # view. It routes work rather than doing it, so speed beats depth. Model
 # and effort are flags; the rest are session-only settings (--settings), never
@@ -133,6 +125,10 @@ class _VoiceTurn:
 
 class PtyManagerBackend(ManagerBackend):
     _push_failures = 0          # class default: a backend built without __init__ (tests)
+    _pushes_read = 0
+    _typed_read = False
+    _boss_needle: str | None = None   # what THIS Boss's command line names
+    _sign_in: asyncio.Event | None = None   # set when the CLI wants a login
 
     def __init__(self, runtime, home: str | Path, bridge_socket: str | Path,
                  python: str, repo_root: str | Path,
@@ -142,10 +138,22 @@ class PtyManagerBackend(ManagerBackend):
                  helper: str | Path | None = None,
                  connect_timeout: float = MCP_CONNECT_TIMEOUT_S,
                  transport: str = "stdio",
-                 session_settings: dict | None = None) -> None:
+                 session_settings: dict | None = None,
+                 adapter: CliAdapter | None = None) -> None:
         if transport not in TRANSPORTS:
             raise ValueError(f"transport must be one of {TRANSPORTS}")
         self.transport = transport
+        # Which CLI hosts the Boss: the runtime's, when it hosts one CLI
+        # (a provider runtime), else Claude Code. The adapter writes the
+        # Boss's command line and its per-CLI configuration; nothing
+        # here names a flag.
+        hosted = getattr(runtime, "adapter", None)
+        claude = getattr(runtime, "claude", None)
+        self.adapter = adapter or (hosted if isinstance(hosted, CliAdapter)
+                                   else ClaudeCodeAdapter(
+                                       claude if isinstance(claude, str) else None))
+        if model == BOSS_MODEL and self.adapter.name != "claude-code":
+            model = None            # "opus" is Claude's alias; others use their default
         # Claude Code settings for THIS session only (--settings <json>):
         # never written to the user's settings files. Measured use: a
         # Boss that should receive workers' cross-session replies needs
@@ -201,6 +209,8 @@ class PtyManagerBackend(ManagerBackend):
         self._pushed_ids: list[str] = []
         self._push_failures = 0
         self._pushes_open = 0              # push turns the Boss has not ended
+        self._pushes_read = 0              # ...of which the Boss has read
+        self._typed_read = False           # this turn read a line the user typed
         self._push_texts: list[str] = []   # what pushes typed, for _take_turn
         self._told_user_in_push = False    # tell_user already spoke for it
         # The window is opened without focus and brought forward once,
@@ -348,10 +358,11 @@ class PtyManagerBackend(ManagerBackend):
             # old 800 KB conversation into it. The Boss woke up with all
             # its old context and, asked "what's up", re-created a task
             # the user had just cancelled.
-            if not self.store.list():
+            if not self.store.list() and self.adapter.name == "claude-code":
                 stored = (conductor.projects.manager().get("session_id")
                           if hasattr(conductor, "projects") else None)
                 session.provider_session_id = stored
+                session.provider = "claude-code" if stored else ""
             self.store.save(session)
             self.store.bind(conversation, session.id)
             self.record("system_event", {"text": "Boss session created"})
@@ -387,7 +398,8 @@ class PtyManagerBackend(ManagerBackend):
         in every turn and is static for a run, so it belongs here."""
         from .claude_manager import load_manager_prompt
         self.boss_dir.mkdir(parents=True, exist_ok=True)
-        parts = ["# You are the Boss\n\n" + load_manager_prompt(), ORIENTATION]
+        parts = ["# You are the Boss\n\n" + load_manager_prompt(),
+                 orientation(self.adapter.display, self.adapter.BOSS_TOOL_PREFIX)]
         if conductor is not None:
             try:
                 from .capabilities import capability_block
@@ -396,7 +408,12 @@ class PtyManagerBackend(ManagerBackend):
                 application_log("manager", "boss.capabilities_unavailable",
                                 "could not snapshot capabilities for the Boss",
                                 severity="warning", exc_info=True)
-        (self.boss_dir / "CLAUDE.md").write_text("\n\n".join(parts) + "\n")
+        text = "\n\n".join(parts) + "\n"
+        for name in self.adapter.BOSS_INSTRUCTIONS:
+            (self.boss_dir / name).write_text(text)
+
+    def instructions_path(self) -> Path:
+        return self.boss_dir / self.adapter.BOSS_INSTRUCTIONS[0]
 
     def _resolve_helper(self) -> Path:
         """The packaged boss-mcp, verified. Refuses rather than guesses."""
@@ -408,46 +425,52 @@ class PtyManagerBackend(ManagerBackend):
                 f"Boss orchestration tooling is unavailable: {check.problem}")
         return Path(path)
 
-    def _write_mcp_config(self, helper: Path | None, names: tuple[str, ...],
-                          boss_id: str, credential: str) -> Path:
-        """Session-scoped: this file is named on THIS session's command
-        line and nowhere else. The user's other Claude Code sessions never
-        see the boss tools, and never see this file."""
-        path = self.boss_dir / "mcp.json"
+    def _write_token(self, credential: str) -> Path:
+        """The credential in a file of its own, owner-readable, for a CLI
+        whose MCP config cannot carry it privately (Codex takes the
+        server on its command line, which `ps` shows to everyone)."""
+        path = self.boss_dir / "mcp.token"
+        path.touch(mode=0o600, exist_ok=True)
+        path.chmod(0o600)
+        path.write_text(credential)
+        return path
+
+    def boss_spec(self, helper: Path | None, names: tuple[str, ...],
+                  boss_id: str, credential: str, session_id: str,
+                  resume: bool) -> BossSpec:
+        """Everything the adapter needs to launch the Boss: the `boss`
+        server as boss-mcp over the bridge socket (stdio) or the
+        conductor's own endpoint (http), and the session to open."""
+        spec = BossSpec(boss_dir=self.boss_dir, server=SERVER_NAME, tools=names,
+                        session_id=session_id, resume=resume, boss_id=boss_id,
+                        credential=credential, model=self.model,
+                        token_file=self._write_token(credential),
+                        extra={"effort": self.effort,
+                               "settings": self.session_settings,
+                               "debug_file": self.debug_file})
         if self.transport == "http":
             # The conductor's own endpoint; the credential rides in the
             # Authorization header of every request.
-            entry = self._bridge.mcp_config_entry(credential)
+            spec.http_entry = self._bridge.mcp_config_entry(credential)
         else:
-            entry = {
-                "type": "stdio",
-                "command": str(helper),
-                "args": ["--socket", str(self.bridge_socket),
-                         "--tools", ",".join(names)],
-                "env": {"BOSS_MCP_TOKEN": credential, "BOSS_SESSION_ID": boss_id},
-            }
-        path.write_text(json.dumps({"mcpServers": {SERVER_NAME: entry}}, indent=2))
-        path.chmod(0o600)
-        return path
+            spec.command = str(helper)
+            spec.args = ["--socket", str(self.bridge_socket),
+                         "--tools", ",".join(names)]
+        return spec
 
     def argv(self, names: tuple[str, ...], claude: str,
              session_id: str, mcp_config: Path, resume: bool) -> list[str]:
-        """The Boss's command line. The session id is always known up
-        front - resumed, or pinned for a fresh session - so the runtime
-        never has to discover which transcript is the Boss's."""
-        argv = [claude, "--permission-mode", "bypassPermissions",
-                "--mcp-config", str(mcp_config), "--strict-mcp-config",
-                "--allowedTools", ",".join(f"mcp__{SERVER_NAME}__{n}" for n in names),
-                "--disallowedTools", ",".join(DISALLOWED)]
-        if self.model:
-            argv += ["--model", self.model]
-        if self.effort:
-            argv += ["--effort", self.effort]
-        if self.session_settings:
-            argv += ["--settings", json.dumps(self.session_settings)]
-        if self.debug_file:
-            argv += ["--debug-file", self.debug_file]
-        argv += ["--resume" if resume else "--session-id", session_id]
+        """The Boss's command line, as the adapter writes it. The session
+        id is always known up front - resumed, or pinned for a fresh
+        session - so the runtime never has to discover which transcript
+        is the Boss's. Kept for callers that built the spec's parts
+        themselves; _ensure_session goes through boss_spec."""
+        spec = self.boss_spec(None, names, self.session.id if self.session else "",
+                              self._credential or "", session_id, resume)
+        argv = self.adapter.boss_argv(spec)
+        if argv is None:
+            raise BossUnavailable(f"{self.adapter.display} cannot host the Boss: "
+                                  "it has no MCP client for the boss tools")
         return argv
 
     async def _ensure_session(self, conductor) -> str:
@@ -474,8 +497,6 @@ class PtyManagerBackend(ManagerBackend):
         # 2. the credential, and the host bound to it
         self._credential = self._bridge.new_token()
         self._bridge.expect(record.id, self._credential)
-        mcp_config = self._write_mcp_config(helper, names, record.id,
-                                            self._credential)
         # 3. the session, launched with a config naming that helper
         # The record says which provider session this Boss is. No fallback
         # to the global manager id here: _ensure_record already gave it to
@@ -483,47 +504,70 @@ class PtyManagerBackend(ManagerBackend):
         # a new conversation resumed the old one.
         stored = record.provider_session_id
         existing = None
+        previous = record.provider or "claude-code"
+        if stored and previous != self.adapter.name:
+            # A record another CLI's Boss wrote: its session is not this
+            # CLI's to resume. The timeline continues; the session is new.
+            self.record("system_event", {
+                "text": f"previous Boss session {stored[:8]} was a "
+                        f"{previous} session; starting a new "
+                        f"{self.adapter.display} session in this window"})
+            stored = None
         if stored:
             # Resuming: the session's file already exists, and discovery
-            # must land on it, not skip it as "already there". But Claude
-            # Code scopes resume to the working directory: a session whose
+            # must land on it, not skip it as "already there". But a CLI
+            # scopes resume to the working directory: a session whose
             # transcript lives under another directory - the invisible
             # Boss's, which ran in the repo - cannot be resumed from here.
             # Say so and start fresh rather than launch a session that
             # never reaches its prompt.
-            from .tmux_runtime import CLAUDE_PROJECTS, munge_project_dir
-            project_dir = CLAUDE_PROJECTS / munge_project_dir(str(self.boss_dir))
-            if not (project_dir / f"{stored}.jsonl").exists():
+            if not await asyncio.to_thread(self.adapter.boss_resumable,
+                                           self.boss_dir, stored):
                 self.record("system_event", {
                     "text": f"previous Boss session {stored[:8]} is not "
                             f"resumable from {self.boss_dir}; starting a new "
                             f"session in this window"})
                 stored = None
             else:
-                existing = {str(p) for p in project_dir.glob("*.jsonl")
-                            if p.stem != stored}
-        # Known up front, either way: the runtime adopts the session at
-        # its prompt rather than waiting for a transcript that a session
-        # nobody has spoken to yet will never write.
+                existing = self.adapter.boss_existing(self.boss_dir, stored)
+        # Known up front where the CLI lets us pin it: the runtime adopts
+        # the session at its prompt rather than waiting for a transcript
+        # that a session nobody has spoken to yet will never write. A CLI
+        # that names its own ids has the runtime discover it, as for a
+        # worker - or, without a transcript, adopt a pinned name.
         boss_sid = stored or str(uuid.uuid4())
-        argv = self.argv(names, self.runtime.claude, boss_sid, mcp_config,
-                         resume=stored is not None)
+        spec = self.boss_spec(helper, names, record.id, self._credential,
+                              boss_sid, resume=stored is not None)
+        argv = self.adapter.boss_argv(spec)
+        if argv is None:
+            self._set_status("failed")
+            raise BossUnavailable(f"{self.adapter.display} cannot host the Boss: "
+                                  "it has no MCP client for the boss tools")
+        self._boss_needle = self.adapter.boss_needle(spec)
+        self._sign_in = asyncio.Event()     # this launch's login screen, if any
         self._set_status("recovering" if stored else "starting")
+        known = boss_sid if (stored or self.adapter.PINS_SESSION_ID
+                             or self.adapter.transcript_dir(str(self.boss_dir))
+                             is None) else None
         self.session_id = await self.runtime.launch_session(
             BOSS_TASK_ID, str(self.boss_dir), argv, existing=existing,
-            session_id=boss_sid, focus=False)
+            session_id=known, focus=False)
         # Captured the moment it exists, not at the end of a turn: this
         # is what a restart resumes.
-        if record.provider_session_id != self.session_id:
+        if record.provider_session_id != self.session_id or \
+                record.provider != self.adapter.name:
             record.provider_session_id = self.session_id
+            record.provider = self.adapter.name
             self.store.save(record)
         if hasattr(conductor, "projects") and \
                 conductor.projects.manager().get("session_id") != self.session_id:
-            conductor.projects.set_manager("anthropic", self.session_id)
+            conductor.projects.set_manager(
+                "anthropic" if self.adapter.name == "claude-code"
+                else self.adapter.name, self.session_id)
         self._unsubscribe = await self.runtime.subscribe(self.session_id,
                                                           self._on_event)
         # 4. boss-mcp said hello, with the required tools
-        connected = await self._bridge.wait_connected(self.connect_timeout)
+        connected = await self._wait_connected()
         if connected is None:
             self._set_status("failed")
             what = ("the session never connected to the Conductor's MCP endpoint"
@@ -551,6 +595,30 @@ class PtyManagerBackend(ManagerBackend):
         self.resync_updates()
         return self.session_id
 
+    async def _wait_connected(self) -> dict | None:
+        """boss-mcp's hello, or None at the timeout - unless the CLI put up
+        its sign-in screen first, which no hello will ever follow: a Boss
+        nobody is logged into fails then, not two minutes later."""
+        if self._sign_in is None:
+            self._sign_in = asyncio.Event()
+        hello = asyncio.ensure_future(
+            self._bridge.wait_connected(self.connect_timeout))
+        login = asyncio.ensure_future(self._sign_in.wait())
+        done, pending = await asyncio.wait({hello, login},
+                                           return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        if hello in done:
+            return hello.result()
+        self._set_status("failed")
+        how = self.adapter.login_command
+        what = (f"{self.adapter.display} is not signed in on this machine"
+                + (f" (run `{how}` first)" if how else ""))
+        self.record("system_event", {"text": what})
+        application_log("manager", "boss.needs_auth", what, severity="error",
+                        provider=self.adapter.name)
+        raise BossUnavailable(f"Boss orchestration tooling is unavailable: {what}")
+
     async def _alive(self, session_id: str) -> bool:
         try:
             status = await self.runtime.get_status(session_id)
@@ -574,9 +642,11 @@ class PtyManagerBackend(ManagerBackend):
         # ask for it - when the runtime hosts PTYs at all, which is what
         # makes a window outlive its process. A runtime without panes
         # (the SDK one, the test fakes) has nothing to be wrong about.
+        # Nor has a CLI whose command line names nothing of ours.
         from .tmux_runtime import TmuxClaudeRuntime
         hosts_panes = isinstance(self.runtime, TmuxClaudeRuntime)
-        if hosts_panes and not await asyncio.to_thread(self._process_running):
+        if hosts_panes and self._needle() and \
+                not await asyncio.to_thread(self._process_running):
             self.record("system_event", {
                 "text": "the Boss process is gone from its window; it "
                         "will be reopened on the next turn"})
@@ -608,10 +678,24 @@ class PtyManagerBackend(ManagerBackend):
                         manager_session_id=self.session_id)
         return True
 
+    def _needle(self) -> str | None:
+        """What this Boss's command line names that nothing else on the
+        machine does, or None for a CLI whose command line names nothing
+        of ours (its window's status is then all there is to go by)."""
+        if self._boss_needle:
+            return self._boss_needle
+        adapter = self.__dict__.get("adapter")
+        if adapter is None or adapter.name == "claude-code":
+            return str(self.boss_dir / "mcp.json")
+        return None
+
     def _process_running(self) -> bool:
-        """Is there a claude running THIS Boss? Its argv names our MCP
-        config, which nothing else on the machine does."""
-        needle = str(self.boss_dir / "mcp.json")
+        """Is there a process running THIS Boss? Its argv names something
+        of ours (Claude Code: our MCP config) that nothing else on the
+        machine does; the adapter says what."""
+        needle = self._needle()
+        if not needle:
+            return True
         try:
             found = subprocess.run(["pgrep", "-f", needle],
                                    capture_output=True, text=True, timeout=5)
@@ -631,6 +715,7 @@ class PtyManagerBackend(ManagerBackend):
                 if not self._take_turn(event.summary):
                     text = event.summary[2:] if event.summary.startswith("> ") \
                         else event.summary
+                    self._typed_read = True
                     self.record("user_message", {"text": text, "source": "typed"})
                     self._set_status("thinking")
             elif (event.detail or {}).get("tool"):
@@ -647,6 +732,11 @@ class PtyManagerBackend(ManagerBackend):
             self._resolve_turns(f"That did not work: {event.error}")
             self.record("system_event", {"text": f"Boss failed: {event.error[:200]}"})
             self._set_status("failed")
+        elif event.type == "needs_input" and \
+                (event.detail or {}).get("reason") == "auth":
+            if self._sign_in is None:
+                self._sign_in = asyncio.Event()
+            self._sign_in.set()
 
     def _prose(self, summary: str, text: str) -> None:
         """A paragraph the Boss has just written, mid-turn: whole to the
@@ -700,17 +790,20 @@ class PtyManagerBackend(ManagerBackend):
             # It IS the end of a pushed update's turn, though: left
             # marked as pushing, every later update queued behind it
             # until the next spoken turn - "never arrived", measured.
-            if self._pushes_open:
+            if self._push_turn(answered=False):
                 self._finish_push()
+            self._typed_read = False
             return
         answered = self._resolve_turns(event.summary)
         self._answer_claims_interim()
+        push_turn = self._push_turn(answered)
+        self._typed_read = False
         source = "voice" if answered else \
-            "worker_update" if self._pushes_open else "typed"
+            "worker_update" if push_turn else "typed"
         self.record("boss_message", {"text": event.summary[:2000],
                                      "source": source})
         self._set_status("ready")
-        if self._pushes_open:
+        if push_turn:
             # What the Boss says back to a worker update is what the
             # user should hear about that worker - measured: it wrote
             # "Here's what PR fifty-nine does: ..." to an update and
@@ -724,6 +817,27 @@ class PtyManagerBackend(ManagerBackend):
                     data={"text": event.summary[:600],
                           "source": "worker_update"}))
             self._finish_push()
+
+    def _push_turn(self, answered: bool) -> bool:
+        """Whether the turn just ended is a pushed update's. Only once the
+        Boss has READ the pushed line (its user message came through
+        _take_turn): a push typed while the Boss was mid-turn sits in its
+        box until it looks up, and that turn's reply is the utterance's,
+        not the update's. Measured 2026-09-11 (Codex Boss): a finish
+        pushed 200 ms before the delegation turn ended was "answered" by
+        "Started the task..." and the real reply, one turn later, went
+        unattributed. Claude Code folds a queued line into the running
+        turn and writes it first, so there the two coincide as before.
+        Nor is it the push's when the line read was one the user typed
+        into the window (measured the same day, typed delegation: its
+        "Started the task..." went out as the finish's news). A turn
+        whose transcript showed no user line at all is the push's:
+        nothing else was asked."""
+        if not self._pushes_open:
+            return False
+        if self._pushes_read > 0:
+            return True
+        return not answered and not self._typed_read
 
     # How much of a line is compared with what was typed: the watcher
     # keeps 200 characters of a user line, and Claude Code can join
@@ -767,6 +881,7 @@ class PtyManagerBackend(ManagerBackend):
         for text in self._push_texts:
             if self._matches(line, text):
                 self._push_texts.remove(text)
+                self._pushes_read = min(self._pushes_open, self._pushes_read + 1)
                 return True
         read = [t for t in self._turns if not t.taken
                 and self._matches(line, t.text)]
@@ -1062,6 +1177,7 @@ class PtyManagerBackend(ManagerBackend):
         """The Boss ended a push's turn; anything a failed send left
         behind goes next."""
         self._pushes_open = max(0, self._pushes_open - 1)
+        self._pushes_read = max(0, min(self._pushes_read - 1, self._pushes_open))
         self._told_user_in_push = False
         if self._pending_updates:
             asyncio.get_event_loop().create_task(self.flush_updates())

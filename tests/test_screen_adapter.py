@@ -58,6 +58,36 @@ class TheScreenIsTheTranscript(unittest.TestCase):
         self.assertIsNone(self.a.transcript_dir("/tmp/x"))
         self.assertIsNone(self.a.transcript_for("/tmp/x", "s"))
 
+    def test_what_was_typed_is_the_user_line_and_not_the_answer(self):
+        """No transcript writes the user line back, so the runtime that
+        typed it says so - the Boss matches its utterances (and the
+        worker updates it pushes) to that line, by its words. And the
+        CLI drawing the words back, however wrapped, is not the reply."""
+        state = {}
+        poll(self.a, state, IDLE, IDLE)
+        events = self.a.sent("What is the first   line of README?", state)
+        self.assertEqual([(e.type, e.summary, e.detail) for e in events],
+                         [("progress", "> What is the first line of README?",
+                           {"source": "user_message"})])
+        echoed = ("> What is the first line of\n  README?\n"
+                  "Reading README.txt\nThe first line is: hello\n│ > \n")
+        events = poll(self.a, state, echoed, echoed, echoed)
+        self.assertEqual(events[0], ("progress", "The first line is: hello"))
+        self.assertEqual(events[-1][0], "completed")
+        self.assertEqual(events[-1][1], "Reading README.txt The first line is: hello")
+        # A short line that happens to be a word of the message is not
+        # a piece of it.
+        self.assertFalse(self.a.is_echo("line", state))
+        self.assertTrue(self.a.is_echo("│ › what is the first line of readme?", state))
+        # Only the last few messages are remembered.
+        for n in range(6):
+            self.a.sent(f"message number {n}", state)
+        self.assertEqual(len(state["screen_sent"]), ScreenAdapter.SENT_KEPT)
+
+    def test_a_transcript_cli_reports_no_user_line_of_its_own(self):
+        from conductor.cli_adapter import ClaudeCodeAdapter
+        self.assertEqual(ClaudeCodeAdapter("/bin/claude").sent("hi", {}), [])
+
 
 class GeminiIsAScreenAdapterWithItsOwnDialogs(unittest.TestCase):
     def setUp(self):
@@ -85,6 +115,115 @@ class GeminiIsAScreenAdapterWithItsOwnDialogs(unittest.TestCase):
         auth = "│ ? Get started\n│ How would you like to authenticate for this project?\n"
         self.assertEqual(self.g.startup_dialog(auth), "auth")
         self.assertIsNone(self.g.startup_dialog("│ > \n"))
+
+    def test_a_dialog_answered_and_scrolled_above_the_prompt_is_history(self):
+        """Measured 0.59.0 (task_947be3d1): Gemini answers the trust
+        choice by restarting in place, and its dialog stays on the pane
+        above the new banner and prompt. The watcher read it as a live
+        dialog for two minutes, never reached the worker's turn end and
+        pressed Enter at the prompt on every poll."""
+        screen = ("Do you trust the files in this folder?\n"
+                  "● 1. Trust folder (task_947be3d1)\n"
+                  "  2. Trust parent folder (proj_1fae0753)\n"
+                  "  3. Don't trust\n\n"
+                  "Gemini CLI is restarting to apply the trust changes...\n"
+                  "   Gemini CLI v0.59.0\n"
+                  "   Authenticated with gemini-api-key /auth\n\n"
+                  "> Read README and report the first installation command.\n\n"
+                  " ✓ ReadFile README.md\n"
+                  "✦ The first installation command in the README is:\n\n"
+                  "  1 curl -fsSL https://example/install.sh | bash\n\n"
+                  "YOLO Ctrl+Y\n"
+                  "* █ Type your message or @path/to/file\n"
+                  "workspace (/directory)\n")
+        self.assertIsNone(self.g.startup_dialog(screen))
+        self.assertTrue(self.g.prompt_ready(screen))
+        state = {"screen_last": ["Gemini CLI v0.59.0"], "screen_busy": True,
+                 "screen_since": ["Gemini CLI v0.59.0"]}
+        self.g.screen_events(screen, state)
+        for _ in range(self.g.SETTLE_POLLS):
+            events = self.g.screen_events(screen, state)
+        self.assertEqual([e.type for e in events], ["completed"])
+        self.assertIn("curl -fsSL", events[0].summary)
+        # Still the dialog while nothing has been drawn under it - the
+        # prompt above it (the previous session's) does not clear it.
+        live = ("> earlier question\n\n* █ Type your message or @path/to/file\n"
+                "Do you trust the files in this folder?\n"
+                "● 1. Trust folder (task_947be3d1)\n  3. Don't trust\n")
+        self.assertEqual(self.g.startup_dialog(live), "trust")
+
+    def test_the_input_box_is_the_starred_one_and_the_echo_above_is_not(self):
+        """Measured 0.59.0 in tmux, 2026-09-11: the box is " * text"
+        between a ▄▄▄ and a ▀▀▀ rule; a submitted message is drawn back
+        above as " > text" between the same rules, wrapped and indented.
+        Reading ">" alone found the echo as the box, so a pushed update
+        "stayed in the input box" for ever: Enter again, then typed
+        again (boss.update_push_failed x3, one finish, three pushes)."""
+        message = ("Your worker · Read README heading with Codex (task_63367cd9) "
+                   "finished a turn: The first heading of README.md is voice-agent "
+                   "and the tagline says hold a key talk and Claude Code answers "
+                   "out loud. Please just acknowledge this in one short sentence "
+                   "and do nothing else.")
+        rule_top, rule_bottom = "▄" * 140, "▀" * 140
+        cut = message.rindex(" ", 0, 130)
+        first, rest = message[:cut], message[cut + 1:]
+        typed = (f"{rule_top}\n * {first}\n   {rest}\n{rule_bottom}\n"
+                 " workspace (/directory)   branch   sandbox   /model\n"
+                 " ~/repos/voice-agent   devin/x   no sandbox   Auto\n")
+        self.assertEqual(self.g.input_box(typed), message)
+        self.assertEqual(self.g.draft(typed), message)
+        submitted = (f"{rule_top}\n > {first}\n   {rest}\n{rule_bottom}\n"
+                     " ⠇ Thinking... (esc to cancel, 0s)        ? for shortcuts\n"
+                     "─" * 140 + "\n YOLO Ctrl+Y      3 skills\n"
+                     f"{rule_top}\n *   Type your message or @path/to/file\n"
+                     f"{rule_bottom}\n"
+                     " workspace (/directory)   branch   sandbox   /model\n"
+                     " ~/repos/voice-agent   devin/x   no sandbox   Auto\n")
+        self.assertEqual(self.g.input_box(submitted),
+                         "Type your message or @path/to/file")
+        self.assertEqual(self.g.draft(submitted), "")
+        self.assertTrue(self.g.busy(submitted))
+        tail = "".join(message.split())[-40:]
+        self.assertNotIn(tail, "".join(self.g.input_box(submitted).split()))
+        # And the echo is not the reply: the rules are furniture.
+        state: dict = {}
+        self.g.sent(message, state)
+        said = self.g.said(self.g.lines(submitted), state)
+        self.assertFalse(any("Read README heading" in ln for ln in said), said)
+        self.assertFalse(any(ln.startswith("▄") for ln in self.g.lines(submitted)))
+
+    def test_a_turns_words_are_the_starred_paragraph_not_the_tool_results(self):
+        """Measured 2026-09-11 (Gemini Boss, conductor-47755, 08:30:56):
+        Gemini prints a tool call as a "✓ name (server) {args}" card
+        with the whole result under it - for inspect_task, the task's
+        JSON - and the Boss's reply went out as that JSON followed by
+        its one "✦" sentence."""
+        turn = ("✓ inspect_task (boss MCP Server) {\"task_id\":\"task_4bc29b78\"}\n"
+                "  {\n    \"provider_health\": \"idle\",\n"
+                "    \"result\": {\n      \"summary\": \"The README's first heading "
+                "is **voice-agent**.\",\n      \"success\": true\n    }\n  }\n\n"
+                "✓ complete_task (boss MCP Server) {\"task_id\":\"task_4bc29b78\"}\n"
+                "  ok\n\n"
+                "✦ I have completed the task. The Codex worker reported that the\n"
+                "  first heading of the README is voice-agent.\n\n"
+                "                                              ? for shortcuts\n"
+                "YOLO Ctrl+Y                     1 GEMINI.md file · 1 MCP server\n"
+                "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄\n *   Type your message or @path/to/file\n"
+                "▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n"
+                "workspace (/directory)          sandbox          /model\n"
+                "~/.voice-conductor/boss         no sandbox       Auto\n")
+        state = {"screen_last": ["Gemini CLI v0.59.0"], "screen_busy": True,
+                 "screen_since": ["Gemini CLI v0.59.0"]}
+        self.g.screen_events(turn, state)
+        for _ in range(self.g.SETTLE_POLLS):
+            events = self.g.screen_events(turn, state)
+        self.assertEqual([e.type for e in events], ["completed"])
+        self.assertEqual(events[0].summary,
+                         "I have completed the task. The Codex worker reported "
+                         "that the first heading of the README is voice-agent.")
+        # A screen with no "✦" (an older Gemini, a dialog) reads as before.
+        self.assertEqual(self.g.said(["Some plain line", "another"], {}),
+                         ["Some plain line", "another"])
 
     def test_an_approval_names_what_is_asked(self):
         screen = ("│ Shell rm -rf build\n│ Allow execution?\n"
@@ -218,6 +357,28 @@ class TheRuntimeFollowsAScreenOnlyCli(unittest.TestCase):
         asyncio.run(go())
         self.assertEqual([(e.type, e.question) for e in seen],
                          [("needs_input", "Gemini CLI needs you to sign in - open its window")])
+
+    def test_a_sent_message_is_reported_as_the_user_line(self):
+        sess = _TmuxSession(task_id="task_1", name="cond_task_1",
+                            working_directory="/tmp", session_id="scr_1")
+        self.rt.sessions["scr_1"] = sess
+        seen = []
+        sess.handlers.append(seen.append)
+        self.screens = [IDLE]
+
+        async def no_draft(sess):
+            return ""
+
+        async def moved(sess, before, submit):
+            return None
+        self.rt._wait_for_input = no_draft
+        self.rt._confirm_moved = moved
+        asyncio.run(self.rt.send("scr_1", "list the open tasks"))
+        self.assertEqual([(e.type, e.summary, e.detail) for e in seen],
+                         [("progress", "> list the open tasks",
+                           {"source": "user_message"})])
+        self.assertEqual(sess.state["screen_sent"], ["list the open tasks"])
+        self.assertEqual(sess.status, "running")
 
     def test_a_session_with_no_transcript_is_named_once_its_prompt_is_up(self):
         sess = _TmuxSession(task_id="task_1", name="cond_task_1",

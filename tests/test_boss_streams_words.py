@@ -194,6 +194,89 @@ class TheWordsGoInNow(unittest.TestCase):
         self.assertFalse(turn.folded)
         self.assertEqual(self.backend._pushes_open, 0)
 
+    def test_an_update_the_boss_has_not_read_does_not_take_the_users_answer(self):
+        """Measured 2026-09-11 (Codex Boss, conductor-20671.jsonl): a
+        worker finished 200 ms before the delegation turn ended; its
+        update was typed, unread, and the turn's "Started the task..."
+        went out as source=worker_update while the Boss's real reply
+        to the update, one turn later, was attributed to nobody. A
+        Codex-style CLI reads what queued as the NEXT turn."""
+        from tests.test_boss_updates import supervisory
+
+        def told() -> list[tuple[str, str]]:
+            return [(c.args[0].data.get("source", ""), c.args[0].data["text"])
+                    for c in self.conductor.bus.emit.call_args_list
+                    if c.args and c.args[0].type == "boss.tell_user"]
+
+        async def scenario():
+            turn = asyncio.create_task(
+                self.backend.handle("read the README heading", self.conductor))
+            await asyncio.sleep(0.01)
+            self.backend.session.child_subagent_ids.append("sub_task_1")
+            self.backend.deliver_supervisory(
+                supervisory("task_1", summary="heading is voice-agent"))
+            await asyncio.sleep(0.01)
+            self.assertEqual(len(self.runtime.queued), 1, "the update waited")
+            # The Boss ends the user's turn without looking up; the
+            # queued update starts the next turn (QueueingRuntime.answer).
+            self.runtime.answer("Started the task; I'll report back.")
+            done = await turn
+            self.assertEqual(told(), [], "the delegation reply was heard "
+                             "as worker news")
+            self.assertEqual(self.backend._pushes_open, 1)
+            self.runtime.answer("Worker reports the heading is voice-agent.")
+            for _ in range(4):
+                await asyncio.sleep(0)
+            return done
+
+        turn = asyncio.run(scenario())
+        self.assertEqual(turn.reply, "Started the task; I'll report back.")
+        self.assertEqual(told(), [("worker_update",
+                                   "Worker reports the heading is voice-agent.")])
+        self.assertEqual(self.backend._pushes_open, 0)
+        sources = [(e.type, e.payload.get("source"), e.payload.get("text", "")[:14])
+                   for e in self.backend.store.events(self.backend.session.id)
+                   if e.type == "boss_message"]
+        self.assertEqual(sources, [("boss_message", "voice", "Started the ta"),
+                                   ("boss_message", "worker_update", "Worker reports")])
+
+    def test_a_line_the_user_typed_keeps_its_answer_from_a_pushed_update(self):
+        """Measured 2026-09-11 08:03 (Codex Boss, conductor-32277.jsonl):
+        the delegation was typed into the window, not spoken; the worker
+        finished 1.2 s before that turn ended, and "Started the task with
+        Claude Code..." went out as source=worker_update."""
+        from tests.test_boss_updates import supervisory
+
+        def told() -> list[str]:
+            return [c.args[0].data["text"]
+                    for c in self.conductor.bus.emit.call_args_list
+                    if c.args and c.args[0].type == "boss.tell_user"]
+
+        async def scenario():
+            await self.backend.handle("hi", self.conductor)
+            self.runtime.answer("Hello.")
+            self.backend.session.child_subagent_ids.append("sub_task_1")
+            self.runtime.in_turn = True
+            self.runtime._emit(user_line("create a task to read the README"))
+            self.backend.deliver_supervisory(
+                supervisory("task_1", summary="heading is voice-agent"))
+            await asyncio.sleep(0.01)
+            self.runtime.answer("Started the task with Claude Code.")
+            self.assertEqual(told(), [], "the typed turn's reply was worker news")
+            self.assertEqual(self.backend._pushes_open, 1)
+            self.runtime.answer("The README's first heading is voice-agent.")
+            for _ in range(4):
+                await asyncio.sleep(0)
+
+        asyncio.run(scenario())
+        self.assertEqual(told(), ["The README's first heading is voice-agent."])
+        self.assertEqual(self.backend._pushes_open, 0)
+        sources = [(e.payload.get("source"), e.payload.get("text", "")[:11])
+                   for e in self.backend.store.events(self.backend.session.id)
+                   if e.type == "boss_message"]
+        self.assertEqual(sources[-2:], [("typed", "Started the"),
+                                        ("worker_update", "The README'")])
+
     def test_words_the_session_never_wrote_do_not_shift_the_answers(self):
         """Measured 2026-08-30 08:47:15: an utterance was typed and
         confirmed sent, and Claude Code never wrote it. Matching lines by

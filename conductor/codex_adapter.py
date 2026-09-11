@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 
 from .agent_events import AgentEvent, SUMMARY_CEILING, keep_end
-from .cli_adapter import CliAdapter
+from .cli_adapter import BossSpec, CliAdapter
 
 CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 # Rollouts older than this are not candidates for a session we just
@@ -72,6 +72,7 @@ class CodexAdapter(CliAdapter):
     name = "codex"
     display = "Codex"
     binary_name = "codex"
+    login_command = "codex login"
     sessions_root: Path | None = None       # override for tests
 
     # Our permission modes onto Codex's approval policy and sandbox.
@@ -287,6 +288,56 @@ class CodexAdapter(CliAdapter):
         # A resumed session names its id (`codex resume <id>`); a fresh
         # one does not - the checkout finds it then.
         return session_id or None
+
+    # -- hosting the Boss ---------------------------------------------------------
+    # Codex has no per-tool deny list. It conducts from a read-only
+    # sandbox with approvals off: a shell command it insists on runs
+    # read-only and never asks (nobody is watching its window for a
+    # question), and AGENTS.md tells it its tools are the boss server's.
+    BOSS_POLICY = ["-a", "never", "-s", "read-only"]
+
+    def _boss_overrides(self, spec: BossSpec) -> list[str]:
+        """The MCP server and the trust of its directory, as -c config
+        overrides: this session's alone, never ~/.codex/config.toml.
+        Overrides are on the command line, so the entry carries no
+        credential - boss-mcp reads it from the token file."""
+        entry = spec.stdio_entry(private=False)
+        key = f"mcp_servers.{spec.server}"
+        overrides = []
+        if "url" in entry:
+            overrides += ["-c", f"{key}.url={json.dumps(entry['url'])}"]
+            for name, value in (entry.get("headers") or {}).items():
+                overrides += ["-c", f"{key}.http_headers.{name}={json.dumps(value)}"]
+        else:
+            overrides += ["-c", f"{key}.command={json.dumps(entry['command'])}",
+                          "-c", f"{key}.args={json.dumps(entry['args'])}"]
+        # Under `-a never` an MCP tool call that would ask is refused
+        # outright ("MCP tool call requires approval, but approval policy
+        # is never"): the boss server's tools are pre-approved, they are
+        # the whole point of the session.
+        overrides += ["-c", f"{key}.default_tools_approval_mode=\"approve\""]
+        # A directory Codex has not been told to trust gets the trust
+        # dialog at every launch; the Boss's own directory is ours.
+        project = f"projects.{json.dumps(str(spec.boss_dir))}"
+        overrides += ["-c", f"{project}.trust_level=\"trusted\""]
+        return overrides
+
+    def boss_argv(self, spec: BossSpec) -> list[str] | None:
+        argv = [self.binary]
+        if spec.resume:
+            argv += ["resume", spec.session_id]
+        argv += [*self.BOSS_POLICY, *self._boss_overrides(spec)]
+        if spec.model:
+            argv += ["-m", spec.model]
+        return argv
+
+    def boss_resumable(self, boss_dir: Path, session_id: str) -> bool:
+        path = self.transcript_for(str(boss_dir), session_id)
+        return path is not None and rollout_cwd(path) == str(boss_dir)
+
+    def boss_needle(self, spec: BossSpec) -> str | None:
+        # The token file's path is on the overrides, and nothing else's.
+        return str(spec.token_file) if spec.token_file else None
 
 
 ADAPTERS = {"codex": CodexAdapter}

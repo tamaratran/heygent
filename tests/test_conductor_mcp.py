@@ -191,7 +191,11 @@ class TheBossIsPointedAtTheEndpoint(unittest.TestCase):
         mcp.port = 43127
         backend.attach_bridge(mcp)
         backend.boss_dir.mkdir(parents=True)
-        path = backend._write_mcp_config(None, ("search_sessions",), "boss_9", "tok")
+        spec = backend.boss_spec(None, ("search_sessions",), "boss_9", "tok",
+                                 "sid", resume=False)
+        argv = backend.adapter.boss_argv(spec)
+        path = backend.boss_dir / "mcp.json"
+        self.assertIn(str(path), argv)
         entry = json.loads(path.read_text())["mcpServers"]["boss"]
         self.assertEqual(entry["type"], "http")
         self.assertEqual(entry["url"], "http://127.0.0.1:43127/mcp")

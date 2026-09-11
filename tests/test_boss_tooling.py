@@ -102,7 +102,9 @@ class ConfigurationIsScopedToOurBoss(unittest.TestCase):
     line and nothing else."""
 
     SOURCES = ("conductor/pty_manager.py", "conductor/boss_helper.py",
-               "conductor/boss_mcp.py", "conductor/boss_bridge.py", "conduct.py")
+               "conductor/boss_mcp.py", "conductor/boss_bridge.py", "conduct.py",
+               "conductor/cli_adapter.py", "conductor/codex_adapter.py",
+               "conductor/screen_adapter.py")
 
     def test_nothing_touches_the_users_global_claude_config(self):
         for name in self.SOURCES:
@@ -112,10 +114,10 @@ class ConfigurationIsScopedToOurBoss(unittest.TestCase):
             self.assertNotRegex(text, r"\.claude/settings", name)
 
     def test_the_config_is_written_under_our_home_and_named_explicitly(self):
-        from conductor import pty_manager
-        source = inspect.getsource(pty_manager.PtyManagerBackend._write_mcp_config)
-        self.assertIn('self.boss_dir / "mcp.json"', source)
-        argv = inspect.getsource(pty_manager.PtyManagerBackend.argv)
+        from conductor.cli_adapter import ClaudeCodeAdapter
+        source = inspect.getsource(ClaudeCodeAdapter.boss_config_path)
+        self.assertIn('boss_dir / "mcp.json"', source)
+        argv = inspect.getsource(ClaudeCodeAdapter.boss_argv)
         self.assertIn('"--mcp-config"', argv)
         self.assertIn('"--strict-mcp-config"', argv)
 
