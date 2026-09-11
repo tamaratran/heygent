@@ -68,27 +68,27 @@ class TheClaudeAdapterIsWhatTheRuntimeDid(unittest.TestCase):
         a = ClaudeCodeAdapter("/usr/local/bin/claude")
         self.assertEqual(a.launch_argv("fix login", "auto"),
                          ["/usr/local/bin/claude", "--permission-mode", "auto",
-                          "--model=opus", "--effort=medium",
+                          "--model=opus", "--effort=low",
                           '--settings={"fastMode":true}',
                           "--disallowedTools=AskUserQuestion",
                           "fix login"])
         self.assertEqual(a.launch_argv("fix login", "auto", session_id="sid"),
                          ["/usr/local/bin/claude", "--permission-mode", "auto",
-                          "--model=opus", "--effort=medium",
+                          "--model=opus", "--effort=low",
                           '--settings={"fastMode":true}',
                           "--disallowedTools=AskUserQuestion",
                           "--session-id", "sid", "fix login"])
         self.assertEqual(a.resume_argv("sid"),
                          ["/usr/local/bin/claude", "--resume", "sid",
-                          "--model=opus", "--effort=medium",
+                          "--model=opus", "--effort=low",
                           '--settings={"fastMode":true}',
                           "--disallowedTools=AskUserQuestion"])
 
-    def test_workers_run_in_fast_mode(self):
-        """Asked 2026-09-11: every worker in fast mode. Measured the same
-        day, the user's own "fastMode": true did not reach a launched
-        session; a session-only --settings did. A resume must carry it too,
-        or a worker picked back up slows down."""
+    def test_workers_run_in_fast_mode_at_low_effort(self):
+        """Asked 2026-09-11: every worker in fast mode at low effort, like
+        the Boss. Measured the same day, the user's own "fastMode": true did
+        not reach a launched session; a session-only --settings did. A
+        resume must carry both, or a worker picked back up slows down."""
         import json
         a = ClaudeCodeAdapter("/usr/local/bin/claude")
         for argv in (a.launch_argv("fix login", "auto"),
@@ -97,6 +97,8 @@ class TheClaudeAdapterIsWhatTheRuntimeDid(unittest.TestCase):
                      a.resume_argv("sid", "bypassPermissions")):
             flag = next(x for x in argv if x.startswith("--settings="))
             self.assertIs(json.loads(flag.split("=", 1)[1])["fastMode"], True)
+            self.assertIn("--effort=low", argv)
+            self.assertNotIn("--effort=medium", argv)
 
     def test_workers_never_get_the_question_menu(self):
         """AskUserQuestion's option menu blocks the pane: the relayed voice
