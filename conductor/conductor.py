@@ -61,13 +61,20 @@ def build_worker_prompt(task: Task, project_context: str,
 # while the user was mid-conversation with the product. Nothing had told it
 # the machine was in use. The rule is about the machine, not the task, so
 # it is not left to the manager to remember per task. The exception exists
-# because things opened with -g landed behind the voice session.
+# because things opened with -g landed behind the voice session. The last
+# sentence exists because workers opened a new Chrome window after every
+# change - asked for by nobody - and one landed in the middle of the user's
+# screen recording (asked 2026-09-11): pages the user already has open
+# reload themselves.
 SHARED_MACHINE_RULE = (
     "The user is on this machine, talking to a voice assistant: do not "
     "play audio, use the microphone, take focus or type into other apps; "
     "test those paths with files and fakes. If you open something for "
     "the user, bring it to the front (no -g) unless they asked for it in "
-    "the background.")
+    "the background. Open nothing they did not ask to see - no new browser "
+    "window, tab or app to show your change: pages they already have open "
+    "reload themselves when the files change. Check your work without "
+    "opening anything visible (curl, a headless browser).")
 
 # The user answers by voice, relayed through a manager, so an answer takes
 # seconds to minutes to arrive as the next message. A worker that asked
