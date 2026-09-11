@@ -69,6 +69,25 @@ class RoutingRuntime(CodingAgentRuntime):
         if location in self.runtimes:
             self.wanted[task_id] = location
 
+    def route(self, session_id: str, provider: str) -> None:
+        """Say which provider's runtime a session belongs to, when this
+        router has not seen it created.
+
+        `owner` is filled by create_session, so after a restart it is
+        empty, and every session fell to the default - Claude Code's
+        runtime - whatever CLI it was. A send to a Codex or Gemini worker
+        then asked Claude's runtime to resume it: its process check looks
+        for `claude` in that checkout, finds none, and would close the
+        live window as empty and run `claude --resume` on another CLI's
+        session id. The task knows its provider; the conductor tells the
+        router before it asks for anything. Never moves a session this
+        router already placed, and ignores a provider it has no runtime
+        for (Claude Code's own local/cloud choice is not this)."""
+        if session_id and provider in self.runtimes and \
+                provider not in ("local", "cloud") and \
+                session_id not in self.owner:
+            self.owner[session_id] = provider
+
     @property
     def providers(self) -> list[str]:
         """Which CLIs this router can start: Claude Code (local and

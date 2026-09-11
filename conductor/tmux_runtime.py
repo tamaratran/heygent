@@ -45,7 +45,7 @@ from .agent_events import AgentEvent
 from .cli_adapter import (CLAUDE_PROJECTS, PROMPT_READY,  # noqa: F401
                           ClaudeCodeAdapter, CliAdapter,
                           detect_approval_prompt, munge_project_dir,
-                          normalize_entry)
+                          normalize_entry, read_input_box)
 from .observability import (ObservabilityBus, ObservabilityEvent,
                             application_log)
 from .runtime import (ApprovalPolicy, CodingAgentRuntime, EventHandler,
@@ -268,12 +268,10 @@ def _prompt_in(pane: str) -> str:
 # task_bd44c4cd listed every claude on the machine except that one.
 PGREP = ["pgrep", "-a", "-f"] if sys.platform == "darwin" else ["pgrep", "-f"]
 
-_PROMPT_CHARS = ("\u276f", ">")
-# Text that SITS in the input box without anyone having typed it: the
-# provider's own hint, and - measured - the note Claude Code leaves after
-# it queues a message while working. Reading that note as "the user is
-# mid-sentence" would hold back every follow-up after the first one.
-_PLACEHOLDERS = ("try \"", "try '", "press up to edit queued messages")
+# Claude Code's input box, kept under the names this module used before
+# the adapter owned them (ClaudeCodeAdapter.PROMPT_MARKS and friends).
+_PROMPT_CHARS = ClaudeCodeAdapter.PROMPT_MARKS
+_PLACEHOLDERS = ClaudeCodeAdapter.PLACEHOLDERS
 # One character typed into the box and taken straight back out, to ask
 # whether what is showing there was typed or merely suggested. See
 # TmuxClaudeRuntime._ghost_in_the_box.
@@ -319,66 +317,27 @@ def stream_path(name: str) -> Path:
     return STREAMS_DIR / f"{name}.raw"
 
 
-# What closes the input box from below: its bottom rule, and the status
-# and shortcut lines Claude Code draws under it.
-_BOX_ENDS = ("─", "⏵", "? for shortcuts")
+_BOX_ENDS = ClaudeCodeAdapter.BOX_ENDS
+_CLAUDE = ClaudeCodeAdapter("claude")
 
 
 def _input_box(pane: str) -> str | None:
-    """Everything in the input box, joined across the lines it wraps onto.
-
-    Or None when no prompt line is on screen. The box starts on the last
-    line beginning with the prompt character; a message longer than the
-    pane is wide carries on underneath, indented, until the box's bottom
-    rule or the status line.
-
-    Reading only that first line is what lost a message on 2026-09-10.
-    The Boss sent task_84d3c789 a 239-character follow-up at 06:55:10;
-    the Enter did not take; and the delivery check looked for the
-    message's LAST forty characters on the prompt line - where a wrapped
-    message's ending never is. It reported "submitted" at once, the Boss
-    told the user it was sent, and the words sat in the worker's box for
-    four minutes until the user opened the window and pressed Enter.
-    """
-    lines = pane.splitlines()
-    start = None
-    for index in range(len(lines) - 1, -1, -1):
-        stripped = lines[index].strip()
-        if stripped and stripped.startswith(_PROMPT_CHARS):
-            start = index
-            break
-    if start is None:
-        return None
-    parts = [lines[start].strip()[1:]]
-    for line in lines[start + 1:]:
-        stripped = line.strip()
-        if not stripped or not line.startswith("  ") \
-                or stripped.startswith(_BOX_ENDS):
-            break
-        parts.append(stripped)
-    return " ".join(part.replace("\xa0", " ").strip()
-                    for part in parts).strip()
+    """Claude Code's input box on this pane - see read_input_box."""
+    return _CLAUDE.input_box(pane)
 
 
 def _typed_but_unsent(pane: str) -> str:
-    """What the USER has half-written in the input box, or "".
+    """What the USER has half-written in Claude Code's input box, or "".
 
     Two writers share one keyboard: the person looking at the workspace,
     and the Manager delivering a follow-up. send-keys appends to whatever
     is already in the box and then presses Enter, so a message arriving
     while someone is mid-sentence does not interleave harmlessly - it
     submits their unfinished words welded to ours, as one prompt neither
-    of us wrote.
-
-    The person wins. They are typing right now; the follow-up can wait for
-    the box to clear.
+    of us wrote. The runtime asks its own adapter (CliAdapter.draft);
+    this is that answer for Claude Code.
     """
-    box = _input_box(pane)
-    if not box:
-        return ""
-    if box.lower().startswith(_PLACEHOLDERS):
-        return ""                 # the provider's own hint text, not input
-    return box
+    return _CLAUDE.draft(pane)
 
 
 class DuplicateSession(RuntimeError):
@@ -502,11 +461,13 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         return out
 
     @classmethod
-    def _send_argv(cls, name: str, message: str) -> list[list[str]]:
+    def _send_argv(cls, name: str, message: str,
+                   submit: list[list[str]] | None = None) -> list[list[str]]:
         """send-keys argv: the literal text - in chunks when it is long -
-        then Enter. -l keeps tmux from interpreting the message as key
-        names, and the pane accumulates the chunks in its input box, so
-        only the final Enter submits.
+        then the keys that submit it (Enter unless the CLI says otherwise).
+        -l keeps tmux from interpreting the message as key names, and the
+        pane accumulates the chunks in its input box, so only the final
+        keys submit.
 
         Kept for callers that want the argv; delivery goes through _tmux so
         that every pane operation has ONE seam. It did not, and a subclass
@@ -514,7 +475,8 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         which reported a pane it had never heard of."""
         return [["send-keys", "-t", name, "-l", chunk]
                 for chunk in cls._chunks(message)] + \
-               [["send-keys", "-t", name, "Enter"]]
+               [["send-keys", "-t", name, *keys]
+                for keys in (submit or [["Enter"]])]
 
     def _alive(self, name: str) -> bool:
         return self._tmux("has-session", "-t", name).returncode == 0
@@ -699,8 +661,10 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         decision = self.approval_policy.decide_prompt(
             description, allow_write=True)
         if decision == "allow":
-            self._tmux("send-keys", "-t", sess.name, "1")
-            self._tmux("send-keys", "-t", sess.name, "Enter")
+            # The CLI's own keys, as resolve_approval uses: "1" and Enter
+            # are Claude Code's and Codex's, not everyone's.
+            for keys in self.adapter.approve_keys(pane):
+                self._tmux("send-keys", "-t", sess.name, *keys)
             self._observe_approval(sess, "approval.policy_decision",
                                    approval_id=approval_id,
                                    decision="allow",
@@ -1034,9 +998,33 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             if sess.task_id == task_id and sess.status != "disconnected":
                 raise RuntimeError(f"task {task_id} already has a live "
                                    f"execution ({sess.session_id})")
-        return await self.launch_session(
+        session_id = await self.launch_session(
             task_id, working_directory,
             self.adapter.launch_argv(initial_prompt, self.permission_mode))
+        if not self.adapter.BRIEF_IN_ARGV:
+            # A CLI that takes no prompt on its command line is started
+            # bare; the brief is its first message, typed once its screen
+            # has settled (a prompt it recognises, or quiet).
+            sess = self.sessions.get(session_id)
+            if sess is not None:
+                await self._wait_quiet(sess)
+            await self.send(session_id, initial_prompt)
+        return session_id
+
+    # How long a bare CLI's screen must hold still before its brief is
+    # typed, and the most it gets to get there.
+    QUIET_S = 1.5
+
+    async def _wait_quiet(self, sess: "_TmuxSession") -> None:
+        deadline = time.monotonic() + self.startup_timeout
+        last, since = None, time.monotonic()
+        while time.monotonic() < deadline:
+            pane = await self._pane(sess.name)
+            if pane != last:
+                last, since = pane, time.monotonic()
+            elif pane.strip() and time.monotonic() - since >= self.QUIET_S:
+                return
+            await asyncio.sleep(0.3)
 
     async def launch_session(self, task_id: str, working_directory: str,
                              argv: list[str],
@@ -1247,7 +1235,16 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             # same text types straight back in.
             await self._off_loop(self._tmux, "send-keys", "-t", sess.name,
                                  "C-u")
-        for argv in self._send_argv(sess.name, message):
+        message = self.adapter.prepare_text(message)
+        submit = self.adapter.submit_keys()
+        typed_screen = None
+        for argv in self._send_argv(sess.name, message, submit):
+            if "-l" not in argv and typed_screen is None and \
+                    not self.adapter.reads_input_box:
+                # Nothing on this CLI's screen says where its box is, so
+                # the only evidence a submit took is the screen moving:
+                # look once, with the text typed and not yet submitted.
+                typed_screen = await self._pane(sess.name)
             result = await self._off_loop(self._tmux, *argv)
             if result.returncode != 0:
                 raise RuntimeError(f"send-keys failed: {result.stderr}")
@@ -1255,22 +1252,27 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                 # Between chunks, and once more before Enter: the pause is
                 # what makes the pieces arrive whole (see SEND_CHUNK_CHARS).
                 await asyncio.sleep(self.SEND_CHUNK_PAUSE_S)
-        try:
-            await self._confirm_submitted(sess, message,
-                                          timeout=self.CONFIRM_S)
-        except RuntimeError:
-            # The words are in the box and the Enter did not take. Press
-            # it once more rather than report a message that is sitting
-            # there unsent - once, because a box that will not submit
-            # after two is a real failure, and the caller must hear it.
-            application_log("runtime", "send.enter_retried",
-                            f"{sess.name}: the message was still in the "
-                            "input box after Enter; pressing it again",
-                            severity="warning", task_id=sess.task_id)
-            await self._off_loop(self._tmux, "send-keys", "-t", sess.name,
-                                 "Enter")
-            await self._confirm_submitted(sess, message,
-                                          timeout=self.CONFIRM_RETRY_S)
+        if typed_screen is not None:
+            await self._confirm_moved(sess, typed_screen, submit)
+        else:
+            try:
+                await self._confirm_submitted(sess, message,
+                                              timeout=self.CONFIRM_S)
+            except RuntimeError:
+                # The words are in the box and the Enter did not take.
+                # Press it once more rather than report a message that is
+                # sitting there unsent - once, because a box that will not
+                # submit after two is a real failure, and the caller must
+                # hear it.
+                application_log("runtime", "send.enter_retried",
+                                f"{sess.name}: the message was still in the "
+                                "input box after Enter; pressing it again",
+                                severity="warning", task_id=sess.task_id)
+                for keys in submit:
+                    await self._off_loop(self._tmux, "send-keys", "-t",
+                                         sess.name, *keys)
+                await self._confirm_submitted(sess, message,
+                                              timeout=self.CONFIRM_RETRY_S)
         if draft:
             # Ours is in; theirs goes back where it was, unsent - all of
             # it, however many lines it wrapped onto.
@@ -1280,11 +1282,6 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                             f"{sess.name}: the user's draft is back in the box",
                             severity="debug", draft=draft[:80])
         sess.status = "running"
-
-    # What Claude Code shows while it is generating. Text in the box under
-    # this is a queued message, not an idle draft, and Enter would submit
-    # both into the queue.
-    BUSY_MARK = "esc to interrupt"
 
     # How long a sent message may sit in the box before its Enter is
     # pressed again, and how long the second one gets before the send
@@ -1315,8 +1312,8 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             if self.adapter.approval_prompt(pane) is not None:
                 await asyncio.sleep(0.4)      # a dialog owns the keyboard
                 continue
-            typed = _typed_but_unsent(pane)
-            if typed and not probed:
+            typed = self.adapter.draft(pane)
+            if typed and not probed and self.adapter.SUGGESTS_IN_BOX:
                 # Text in the box is not proof that anyone typed it: a
                 # recap leaves Claude Code's own suggested next prompt
                 # drawn there, and it reads exactly like typing. Ask once.
@@ -1325,7 +1322,7 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                     typed = ""      # a suggestion: our text replaces it
             if not typed and self.adapter.prompt_ready(pane):
                 return ""
-            if typed and self.BUSY_MARK not in pane.lower():
+            if typed and not self.adapter.busy(pane):
                 # A person's draft, and the session is idle. It is handed
                 # back to be set aside and restored, not waited on. (The
                 # shortcuts hint that PROMPT_READY looks for disappears
@@ -1356,7 +1353,7 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         name = sess.name
         await self._off_loop(self._tmux, "send-keys", "-t", name, "-l", PROBE)
         await asyncio.sleep(0.3)
-        after = _typed_but_unsent(await self._pane(name))
+        after = self.adapter.draft(await self._pane(name))
         await self._off_loop(self._tmux, "send-keys", "-t", name, "BSpace")
         return after == PROBE
 
@@ -1364,10 +1361,13 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                                  timeout: float = 4.0) -> None:
         """The text leaving the input box is the acknowledgement.
 
-        Read from the WHOLE box (see _input_box), and compared with every
-        space taken out: the box wraps a long message wherever the pane's
-        width falls, sometimes inside a word, and a check that only
-        matched the text as typed would call a wrapped message sent.
+        Read from the WHOLE box (see read_input_box), and compared with
+        every space taken out: the box wraps a long message wherever the
+        pane's width falls, sometimes inside a word, and a check that only
+        matched the text as typed would call a wrapped message sent. The
+        box is the adapter's: Codex's "›" and Cursor's "→" were never
+        found by Claude Code's "❯", and a message still sitting in either
+        read as sent.
         """
         tail = "".join(message.split())[-40:]
         if not tail:
@@ -1375,12 +1375,42 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             pane = await self._pane(sess.name)
-            box = _input_box(pane) or ""
+            box = self.adapter.input_box(pane) or ""
             if tail not in "".join(box.split()):
                 return                        # submitted
             await asyncio.sleep(0.3)
         raise RuntimeError(
             f"message stayed in {sess.name}'s input box; not submitted")
+
+    async def _confirm_moved(self, sess: "_TmuxSession", typed_screen: str,
+                             submit: list[list[str]]) -> None:
+        """Delivery for a CLI whose input box nobody can read: the screen
+        changing after the submit keys is the acknowledgement. Every TUI
+        and REPL redraws or echoes when it takes a line; one that shows
+        nothing new may be thinking silently, or may have swallowed the
+        keys - so the keys go once more, and a screen that still has not
+        moved is logged as unverified rather than called delivered or
+        failed. Weaker than reading the box, and said so."""
+        for attempt, timeout in enumerate((self.CONFIRM_S,
+                                           self.CONFIRM_RETRY_S)):
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if await self._pane(sess.name) != typed_screen:
+                    return
+                await asyncio.sleep(0.3)
+            if attempt == 0:
+                application_log("runtime", "send.enter_retried",
+                                f"{sess.name}: nothing moved on screen after "
+                                "submitting; pressing the keys again",
+                                severity="warning", task_id=sess.task_id)
+                for keys in submit:
+                    await self._off_loop(self._tmux, "send-keys", "-t",
+                                         sess.name, *keys)
+        application_log("runtime", "send.unverified",
+                        f"{sess.name}: {self.adapter.display} showed nothing "
+                        "new after the message was submitted; it may not "
+                        "have been taken", severity="warning",
+                        task_id=sess.task_id)
 
     async def interrupt(self, session_id: str) -> None:
         sess = self._require(session_id)
@@ -1679,7 +1709,7 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         if self.adapter.startup_dialog(pane) is not None or \
                 self.adapter.approval_prompt(pane) is not None:
             return False
-        if self.BUSY_MARK in pane.lower():
+        if self.adapter.busy(pane):
             return False
         return self.adapter.prompt_ready(pane)
 

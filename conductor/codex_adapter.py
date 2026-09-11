@@ -115,6 +115,18 @@ class CodexAdapter(CliAdapter):
                   "apply changes?")
     _OPTION = re.compile(r"^\s*[›>]?\s*\d+\.\s*(yes|no|allow|decline)\b", re.I)
 
+    # The composer as an input box: "› " and the text, wrapped lines
+    # indented under it, a blank line before the footer (measured on
+    # 0.151, "› Ask Codex to do anything"). Its hint rotates between
+    # versions, so the probe (SUGGESTS_IN_BOX) backs the list up: typing
+    # replaces a hint and appends to a draft, whatever the words.
+    PROMPT_MARKS = ("\u203a",)
+    PLACEHOLDERS = ("ask codex to do anything",)
+    SUGGESTS_IN_BOX = True
+    # "Working (12s • esc to interrupt)" while a turn runs - from the
+    # binary's strings, like _QUESTIONS; not yet seen on a live screen.
+    BUSY = re.compile(r"esc to interrupt", re.I)
+
     def prompt_ready(self, screen: str) -> bool:
         return bool(self._READY.search(screen)) and \
             self.startup_dialog(screen) is None and \

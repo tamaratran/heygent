@@ -224,7 +224,8 @@ kind: Claude Code (the default), Codex, Cursor, and others as they are
 installed. The "Capabilities this run" list below says which are
 available on this machine right now - trust it. When the user names
 one ("start a Codex on this", "have Cursor do it"), pass it as
-create_task's `provider` ("codex", "cursor", "gemini"); when they do
+create_task's `provider` ("codex", "cursor", "gemini"; a CLI listed
+as `Name (provider "x")` is started with provider "x"); when they do
 not, leave it out and Claude Code does the work. Every kind gets the
 same window, card and messages; only the CLI inside differs.
 

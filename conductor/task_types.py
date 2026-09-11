@@ -7,6 +7,7 @@ details attached to tasks.
 
 from __future__ import annotations
 
+import re
 import secrets
 from dataclasses import asdict, dataclass, field
 
@@ -15,7 +16,11 @@ from .storage import now_iso
 TASK_STATUSES = ("queued", "starting", "running", "waiting_for_user",
                  "paused", "interrupted", "completed", "failed", "cancelled")
 
+# The CLIs with an adapter in code. Not the only ones a task may name: a
+# CLI described in providers.json (configured_adapter) is a provider too,
+# and a task stored under one must still load after the entry is gone.
 PROVIDERS = ("claude-code", "codex", "gemini", "cursor")
+PROVIDER_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,39}$")
 
 ISOLATION_TYPES = ("git-worktree", "provider-managed", "shared", "sandbox")
 
@@ -67,7 +72,8 @@ class Task:
     def __post_init__(self) -> None:
         if self.status not in TASK_STATUSES:
             raise ValueError(f"unknown task status: {self.status!r}")
-        if self.provider not in PROVIDERS:
+        if self.provider not in PROVIDERS and \
+                not PROVIDER_NAME.match(str(self.provider)):
             raise ValueError(f"unknown provider: {self.provider!r}")
         if self.surface_mode not in SURFACE_MODES:
             raise ValueError(f"unknown surface mode: {self.surface_mode!r}")

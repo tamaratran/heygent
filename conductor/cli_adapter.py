@@ -63,6 +63,75 @@ class CliAdapter:
         one of "trust", "resume_picker", "chrome" - or None."""
         return None
 
+    # -- the input box ------------------------------------------------------
+    # How delivery is checked. The runtime used to answer these with
+    # Claude Code's characters for every CLI: a line starting with "❯" or
+    # ">" was the box, "esc to interrupt" was busy, Enter submitted. Codex
+    # draws "›", Cursor "→", Gemini "│ >" - so for them the box was never
+    # found, a follow-up still sitting in it read as submitted, and a
+    # person's draft was never seen. A CLI that says nothing here has a box
+    # nobody can read: delivery is then judged by the screen moving, and
+    # said to be unverified (see TmuxClaudeRuntime.send).
+    PROMPT_MARKS: tuple[str, ...] = ()
+    # What closes the box from below, as the start of a stripped line.
+    BOX_ENDS: tuple[str, ...] = ()
+    # Hint text the CLI draws in an EMPTY box (lowercase prefixes).
+    PLACEHOLDERS: tuple[str, ...] = ()
+    # What is on screen only while a turn is running.
+    BUSY: re.Pattern | None = None
+    # The keys that submit what was typed.
+    SUBMIT_KEYS: tuple[tuple[str, ...], ...] = (("Enter",),)
+    # Draws its own suggestion in the box, indistinguishable from typing
+    # but for behaviour: the runtime probes one character to tell.
+    SUGGESTS_IN_BOX = False
+    # The brief goes on the command line (launch_argv). False: the CLI is
+    # started bare and the brief is typed in once it is listening.
+    BRIEF_IN_ARGV = True
+    # Newlines in typed text submit early in a line-oriented REPL, so a
+    # CLI that says so gets every message as one line.
+    ONE_LINE = False
+    # The box is the bottom of the screen: only blank lines and lines
+    # box_ends accepts may follow it. True for a line REPL, whose prompt
+    # scrolls up into history with the text that was submitted still on
+    # it - read as the box, a message already taken looks unsent and its
+    # Enter is pressed again (measured live on a REPL, 2026-09-11). A TUI
+    # pins its box and draws whatever it likes under it, so False there.
+    BOX_AT_BOTTOM = False
+
+    def input_box(self, screen: str) -> str | None:
+        """What is in the input box, or None when this adapter cannot find
+        one on this screen (or knows no box at all)."""
+        if not self.PROMPT_MARKS:
+            return None
+        return read_input_box(screen, self.PROMPT_MARKS, self.box_ends,
+                              at_bottom=self.BOX_AT_BOTTOM)
+
+    def box_ends(self, stripped: str) -> bool:
+        """Does this line close the box from below?"""
+        return bool(self.BOX_ENDS) and stripped.startswith(self.BOX_ENDS)
+
+    @property
+    def reads_input_box(self) -> bool:
+        return bool(self.PROMPT_MARKS)
+
+    def draft(self, screen: str) -> str:
+        """What a PERSON has half-written in the box, or "": the box, less
+        the CLI's own hint text."""
+        box = self.input_box(screen)
+        if not box or box.lower().startswith(self.PLACEHOLDERS):
+            return ""
+        return box
+
+    def busy(self, screen: str) -> bool:
+        """A turn is running (text in the box would be queued, not idle)."""
+        return bool(self.BUSY and self.BUSY.search(screen))
+
+    def submit_keys(self) -> list[list[str]]:
+        return [list(keys) for keys in self.SUBMIT_KEYS]
+
+    def prepare_text(self, message: str) -> str:
+        return " ".join(message.split()) if self.ONE_LINE else message
+
     # -- answering a permission prompt ---------------------------------------
     def approve_keys(self, screen: str) -> list[list[str]]:
         """The send-keys sequences that accept the prompt on screen.
@@ -119,6 +188,56 @@ class CliAdapter:
         """A string on the running process's command line that names
         this session, for the process table's second opinion."""
         return session_id or None
+
+
+# Vertical frame furniture a TUI draws at the edges of its box ("│ > hi │").
+_FRAME = "│┃║"
+
+
+def read_input_box(screen: str, marks: tuple[str, ...],
+                   ends=lambda stripped: False,
+                   at_bottom: bool = False) -> str | None:
+    """Everything in the input box, joined across the lines it wraps onto.
+
+    Or None when no prompt line is on screen. The box starts on the last
+    line whose content begins with one of `marks`; a message longer than
+    the pane is wide carries on underneath, indented, until a blank line
+    or a line `ends` says closes the box (a rule, a status line). With
+    at_bottom, a box with anything else under it is history, not a box.
+
+    Reading only that first line is what lost a message on 2026-09-10.
+    The Boss sent task_84d3c789 a 239-character follow-up at 06:55:10;
+    the Enter did not take; and the delivery check looked for the
+    message's LAST forty characters on the prompt line - where a wrapped
+    message's ending never is. It reported "submitted" at once, the Boss
+    told the user it was sent, and the words sat in the worker's box for
+    four minutes until the user opened the window and pressed Enter.
+    """
+    lines = [line.strip(_FRAME).rstrip() for line in screen.splitlines()]
+    start = None
+    for index in range(len(lines) - 1, -1, -1):
+        stripped = lines[index].strip()
+        if stripped and stripped.startswith(marks):
+            start = index
+            break
+    if start is None:
+        return None
+    first = lines[start].strip()
+    mark = next(m for m in marks if first.startswith(m))
+    parts = [first[len(mark):]]
+    below = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        stripped = line.strip()
+        if not stripped or not line.startswith("  ") or ends(stripped):
+            below = index
+            break
+        parts.append(stripped)
+    if at_bottom and any(line.strip() and not ends(line.strip())
+                         for line in lines[below:]):
+        return None
+    return " ".join(part.replace("\xa0", " ").strip()
+                    for part in parts).strip()
 
 
 # -- Claude Code -----------------------------------------------------------------
@@ -326,6 +445,19 @@ class ClaudeCodeAdapter(CliAdapter):
     # the current Opus.
     WORKER_MODEL = ("--model=opus", "--effort=medium")
 
+    # The box, as measured off live workers: "❯" and U+00A0, wrapped text
+    # indented underneath, then the bottom rule and the "⏵⏵" status line.
+    PROMPT_MARKS = ("❯", ">")
+    BOX_ENDS = ("─", "⏵", "? for shortcuts")
+    # Text that SITS in the box without anyone having typed it: the
+    # CLI's own hint, and - measured - the note Claude Code leaves after
+    # it queues a message while working. Reading that note as "the user is
+    # mid-sentence" would hold back every follow-up after the first one.
+    PLACEHOLDERS = ("try \"", "try '", "press up to edit queued messages")
+    BUSY = re.compile(r"esc to interrupt", re.I)
+    # After a recap Claude Code draws a suggested next prompt in the box.
+    SUGGESTS_IN_BOX = True
+
     def launch_argv(self, prompt: str, permission_mode: str,
                     session_id: str | None = None) -> list[str]:
         # The equals form is load-bearing: --disallowedTools is variadic,
@@ -410,6 +542,10 @@ def adapter_for(provider: str, binary: str | None = None) -> CliAdapter:
                 cls = more[provider]
                 break
     if cls is None:
+        # Last, a CLI the user described in providers.json.
+        from .configured_adapter import CONFIGURED, ConfiguredAdapter
+        if provider in CONFIGURED:
+            return ConfiguredAdapter(provider, CONFIGURED[provider], binary)
         generic = CliAdapter(binary or provider)
         generic.name = provider
         return generic

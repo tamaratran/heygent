@@ -27,6 +27,32 @@ PROVIDER_NAMES = {"claude-code": "Claude Code", "codex": "Codex",
                   "gemini": "Gemini CLI", "cursor": "Cursor"}
 
 
+def all_providers() -> list[str]:
+    """The built-in providers, then every CLI providers.json describes."""
+    from .configured_adapter import CONFIGURED
+    return [*PROVIDERS, *(name for name in CONFIGURED if name not in PROVIDERS)]
+
+
+def provider_binaries(provider: str) -> tuple[str, ...]:
+    if provider in PROVIDER_BINARIES:
+        return PROVIDER_BINARIES[provider]
+    from .configured_adapter import CONFIGURED, binaries
+    return binaries(CONFIGURED[provider]) if provider in CONFIGURED \
+        else (provider,)
+
+
+def provider_label(provider: str) -> str:
+    """How the Boss reads a provider in its capability list. A configured
+    one carries the name create_task takes, since its display name is
+    whatever the user wrote."""
+    if provider in PROVIDER_NAMES:
+        return PROVIDER_NAMES[provider]
+    from .configured_adapter import CONFIGURED
+    display = (CONFIGURED.get(provider) or {}).get("display")
+    return f"{display} (provider \"{provider}\")" if display \
+        else f"provider \"{provider}\""
+
+
 def _can(obj, *methods: str) -> bool:
     """Whether obj really implements every one of these."""
     if obj is None:
@@ -35,7 +61,7 @@ def _can(obj, *methods: str) -> bool:
 
 
 def _provider_state(conductor, provider: str) -> tuple[bool, str]:
-    binaries = PROVIDER_BINARIES.get(provider, (provider,))
+    binaries = provider_binaries(provider)
     if not any(shutil.which(binary) for binary in binaries):
         return False, f"no {' or '.join(binaries)} on PATH"
     runtime = getattr(conductor, "runtime", None)
@@ -84,9 +110,9 @@ def snapshot(conductor) -> dict[str, tuple[bool, str]]:
     out["project discovery"] = (
         _can(locator, "search") or _can(locator, "find"),
         "no project locator")
-    for provider in PROVIDERS:
+    for provider in all_providers():
         ok, why = _provider_state(conductor, provider)
-        out[PROVIDER_NAMES.get(provider, provider)] = (ok, why)
+        out[provider_label(provider)] = (ok, why)
     out["session creation"] = (_can(runtime, "create_session"),
                                "runtime cannot start sessions")
     out["session messaging"] = (_can(runtime, "send"),

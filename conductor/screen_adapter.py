@@ -70,6 +70,12 @@ class ScreenAdapter(CliAdapter):
                 out.append(line)
         return out
 
+    def box_ends(self, stripped: str) -> bool:
+        # The CLI's own status lines sit under its box, indented like a
+        # wrapped line; they close it rather than join the message.
+        return bool(self.CHROME_LINES.match(stripped)) or \
+            super().box_ends(stripped)
+
     def is_prompt(self, line: str) -> bool:
         return bool(self.PROMPT.search(self.clean(line)))
 
@@ -145,6 +151,13 @@ class GeminiAdapter(ScreenAdapter):
     display = "Gemini CLI"
     binary_name = "gemini"
     PROMPT = re.compile(r"(Type your message|@path/to/file|^>\s*$)")
+    # The box "│ > text │" inside its frame, closed by "╰───╯". Like the
+    # ready prompt, from Gemini's source rather than a signed-in screen.
+    PROMPT_MARKS = (">",)
+    BOX_ENDS = ("╰", "─")
+    PLACEHOLDERS = ("type your message",)
+    SUGGESTS_IN_BOX = True
+    BUSY = re.compile(r"esc to cancel", re.I)
     _APPROVAL = ("allow execution", "apply this change", "allow once",
                  "yes, allow", "do you want to proceed")
 
@@ -212,6 +225,15 @@ class CursorAdapter(ScreenAdapter):
     # arrow marks the selected option there too, so a ready prompt is an
     # arrow line on a screen that is not asking.
     PROMPT = re.compile(r"^→\s")
+    # The composer as a box: "→ " and the text, the footer under it (its
+    # CHROME_LINES close it). Empty, it shows a hint: "Plan, search, build
+    # anything", and "Add a follow-up" after a turn (both measured).
+    PROMPT_MARKS = ("→",)
+    PLACEHOLDERS = ("plan, search, build anything", "add a follow-up")
+    SUGGESTS_IN_BOX = True
+    # The braille spinner line ("⠞ Reading 56 tokens"), measured in a
+    # card body, is up only while a turn runs.
+    BUSY = re.compile(r"(?m)^\s*[⠀-⣿]\s")
     _APPROVAL = ("run this command?", "not in allowlist", "waiting for approval")
     # Measured in a card body: the model/context footer ("Auto · 8.3%"),
     # the cwd line, the tips, the braille spinner ("⠞ Reading 56 tokens").

@@ -296,7 +296,7 @@ class GlobalConductor:
             conductor = self._conductor(project.id)
             task = conductor.store.get(task_id)
             if task is not None:
-                return conductor, task
+                return conductor, conductor._route(task)
         raise KeyError(f"no such task: {task_id}")
 
     def _touch(self, project_id: str, task_id: str | None = None) -> None:

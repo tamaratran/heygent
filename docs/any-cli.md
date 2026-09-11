@@ -139,3 +139,57 @@ Left to measure, each needing the user at the keyboard: a Gemini turn
 after sign-in (its ready-prompt regex), Codex's approval wording (its
 sandbox ran every probe command without asking), and everything about
 Cursor is measured; what remains there is a transcript to tail, if its per-project state ever holds one.
+
+## Any CLI without code: providers.json (2026-09-11)
+
+"Why can't we just support all CLI agents?" Because the hosting was
+generic and the delivery was not. Every CLI already ran in a pane we
+type into, but the runtime judged every one by Claude Code's screen:
+the input box was a line starting "❯" or ">", busy was "esc to
+interrupt", Enter submitted, "1" and Enter approved. Codex ("›"), Cursor
+("→") and Gemini ("│ >") never matched, so a follow-up still sitting in
+their box was reported sent. And after a restart the router placed
+every session with Claude Code's runtime, whatever the task's CLI.
+
+Those answers are the adapter's now (`PROMPT_MARKS`, `BOX_ENDS`,
+`PLACEHOLDERS`, `BUSY`, `SUBMIT_KEYS`, `approve_keys`), each CLI has its
+own, and the conductor routes a task's session by `Task.provider`
+before asking the router anything.
+
+A CLI with no adapter is described in `~/.voice-conductor/providers.json`
+(`conductor/configured_adapter.py` has the full field list):
+
+```json
+{"providers": {"aider": {"display": "Aider", "command": ["aider"],
+                         "brief": "--message", "prompt_marks": [">"]}}}
+```
+
+Only `command` is required. The conductor loads the file at start,
+builds a runtime for each entry whose command is on PATH, the capability
+list shows it as `Aider (provider "aider")`, and create_task takes
+`provider="aider"`.
+
+| | with no more than `command` | what buys it back |
+|---|---|---|
+| window, card, focus, typing, process check, sweep | same as any CLI | - |
+| the brief | typed in as one line once the screen is quiet | `brief`: `"argument"` or a flag |
+| turn end | output quiet for 5 s (a silent think reads as a finish) | `prompt` (quiet AND the prompt back), `busy` |
+| turn text | what appeared on screen during the turn | `chrome` to drop status lines |
+| delivery | the screen moving after the submit keys; if it never moves, the keys go once more and `send.unverified` is logged - never called delivered or failed | `prompt_marks`: the box is read, a message left in it is an error, a person's draft is set aside and restored |
+| approvals | not recognised: the question arrives as a finished turn's text, answered with send_to_task | `approval`, `approve_keys`, `deny_keys` |
+| resume | the command starts afresh in the same checkout | `resume` |
+| structured progress (tool names, results) | none | an adapter in code with a transcript parser, like Codex's |
+
+### Still open
+
+- `send.unverified` is a log line; the Boss is told "ok". Carrying
+  "sent, not verified" back through send_to_task is the next step.
+- Codex's busy mark and Gemini's box, busy mark and placeholder are
+  from their sources, not from a signed-in screen here; Cursor's
+  approve/deny keys are still the base "1"+Enter / Escape.
+- Cursor's `resume_argv` passes the invented `scr_` id as a chatId.
+- `unstick` and `unwatched_prompts` still look for Claude Code's
+  dialog wording on every pane.
+- A configured CLI's own boot dialogs (trust, sign-in) are not
+  recognised; the user answers them in the window.
+

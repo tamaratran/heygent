@@ -429,8 +429,17 @@ def build_conductor(home: Path,
     # actually installed; capabilities tells the Boss which those are.
     from conductor.cli_adapter import CliAdapter, adapter_for
     from conductor.capabilities import PROVIDER_BINARIES
+    from conductor import configured_adapter
+    # And every CLI described in <home>/providers.json, after the ones
+    # with an adapter in code (a name both know stays the built-in one).
+    configured, problems = configured_adapter.load(home)
+    for problem in problems:
+        print(f"providers.json: skipped {problem}", file=sys.stderr)
+    wanted = dict(PROVIDER_BINARIES)
+    for name, spec in configured.items():
+        wanted.setdefault(name, configured_adapter.binaries(spec))
     providers = {}
-    for name, binaries in PROVIDER_BINARIES.items():
+    for name, binaries in wanted.items():
         if name == "claude-code":
             continue
         found = next((path for binary in binaries

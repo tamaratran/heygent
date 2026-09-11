@@ -119,6 +119,17 @@ class Conductor:
         task = self.store.get(task_id)
         if task is None:
             raise KeyError(f"no such task: {task_id}")
+        return self._route(task)
+
+    def _route(self, task: Task) -> Task:
+        """Tell a routing runtime which CLI's runtime this task's session
+        is on, before anything is asked of it (RoutingRuntime.route says
+        what went wrong without). Cheap, and a no-op for Claude Code and
+        for runtimes that route nothing."""
+        route = getattr(type(self.runtime), "route", None)
+        if route is not None and task.provider != "claude-code" and \
+                task.provider_session_id:
+            route(self.runtime, task.provider_session_id, task.provider)
         return task
 
     def _on_event(self, task_id: str):
@@ -479,6 +490,10 @@ class Conductor:
         it and the protocol is shared with runtimes that cannot."""
         title = check_title(title)
         provider = provider or "claude-code"
+        from .configured_adapter import CONFIGURED
+        from .task_types import PROVIDERS
+        if provider not in PROVIDERS and provider not in CONFIGURED:
+            raise ValueError(f"unknown provider: {provider!r}")
         task = self.store.create(title=title, goal=goal, computer=computer,
                                  provider=provider)
         # Which CLI, and where. A provider other than Claude Code names
@@ -585,7 +600,7 @@ class Conductor:
         return True
 
     def list_tasks(self) -> list[Task]:
-        return self.store.list()
+        return [self._route(task) for task in self.store.list()]
 
     def inspect_task(self, task_id: str, recent_events: int = 10) -> dict:
         task = self._require(task_id)
