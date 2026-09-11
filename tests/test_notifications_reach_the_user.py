@@ -280,7 +280,7 @@ class TheUserHearsOneAssistant(unittest.TestCase):
         self.assertIn("I don't have web access", prompt)
         self.assertNotIn("say so\nplainly", prompt)
         self.assertNotIn("start coding agents in them", prompt)
-        self.assertIn("# Manager (manager-v24)",
+        self.assertIn("# Manager (manager-v25)",
                       Path("prompts/manager.md").read_text())
 
     def test_having_no_web_tools_is_not_something_to_say(self):
@@ -294,6 +294,76 @@ class TheUserHearsOneAssistant(unittest.TestCase):
         body = text.partition("\n---\n")[2]
         self.assertIn("To the user you are one assistant", body)
         self.assertIn("I don't have web access", body)
+class WhatTheVoiceIsToldAboutSpeaking(unittest.TestCase):
+    """Five failures measured in one session, all of them in how a correct
+    answer was spoken. voice_conductor.md fronts the conductor and
+    voice_agent.md the standalone agent; a rule taught to one and not the
+    other is a rule half the builds do not have."""
+
+    def voices(self):
+        from pathlib import Path
+        return {name: Path(f"prompts/{name}.md").read_text()
+                for name in ("voice_conductor", "voice_agent")}
+
+    def assert_both(self, phrase):
+        for name, text in self.voices().items():
+            self.assertIn(phrase, text, f"{name}.md is missing it")
+
+    def test_a_stale_question_is_not_spoken(self):
+        """"What do you want done?" was said 13 seconds after the user had
+        said exactly what they wanted: the answer was written before their
+        last utterance was heard."""
+        self.assert_both("Never speak a question they have since answered")
+
+    def test_a_gap_filler_names_what_it_heard(self):
+        """"Thanks, yeah. Noted." fits any sentence ever said, which is
+        what makes it worse than saying nothing."""
+        self.assert_both("worse than silence")
+
+    def test_the_voice_never_confirms_that_something_happened(self):
+        """It said the restart had gone cleanly and the session was
+        reconnected; nobody had looked, and it had to be walked back."""
+        self.assert_both("You never know that something happened")
+
+    def test_only_the_unsaid_part_is_relayed(self):
+        """The interim de-dupe in conduct.py only strips a prefix match, so
+        an answer that comes back reworded is spoken twice."""
+        self.assert_both("Say only the part you have not said yet")
+
+    def test_urls_and_hashes_are_not_read_aloud(self):
+        """A full PR URL was read out character by character."""
+        self.assert_both("Never read out a URL")
+        self.assert_both("Finish the sentence you start")
+
+
+class WhatTheBossIsToldAboutBeingSpokenAloud(unittest.TestCase):
+    """The Boss's reply IS the spoken sentence, so two of the same session's
+    failures are fixed in its prompt rather than the voice's."""
+
+    def manager(self):
+        from conductor.claude_manager import load_manager_prompt
+        return load_manager_prompt()
+
+    def test_a_reply_does_not_end_by_asking_what_they_want_done(self):
+        p = self.manager()
+        self.assertIn("never end it with", p)
+        self.assertIn('other question they have answered by the time it is '
+                      'said', p)
+        self.assertNotIn('"hey - what do you want done?"', p)
+
+    def test_the_pending_decision_still_goes_last(self):
+        """The dropped question is the conversational one; a blocked worker's
+        question must still reach the user at the end of the reply."""
+        p = self.manager()
+        self.assertIn("still worth asking for, and still goes last", p)
+        self.assertIn("end your reply with the one-sentence pending question",
+                      p)
+
+    def test_ids_and_links_stay_out_of_the_spoken_reply(self):
+        p = self.manager()
+        self.assertIn("Keep URLs, filesystem paths, branch names and commit",
+                      p)
+        self.assertIn("put the link", p)
 
 
 if __name__ == "__main__":
