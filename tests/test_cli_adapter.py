@@ -68,14 +68,17 @@ class TheClaudeAdapterIsWhatTheRuntimeDid(unittest.TestCase):
         a = ClaudeCodeAdapter("/usr/local/bin/claude")
         self.assertEqual(a.launch_argv("fix login", "auto"),
                          ["/usr/local/bin/claude", "--permission-mode", "auto",
+                          "--model=opus", "--effort=medium",
                           "--disallowedTools=AskUserQuestion",
                           "fix login"])
         self.assertEqual(a.launch_argv("fix login", "auto", session_id="sid"),
                          ["/usr/local/bin/claude", "--permission-mode", "auto",
+                          "--model=opus", "--effort=medium",
                           "--disallowedTools=AskUserQuestion",
                           "--session-id", "sid", "fix login"])
         self.assertEqual(a.resume_argv("sid"),
                          ["/usr/local/bin/claude", "--resume", "sid",
+                          "--model=opus", "--effort=medium",
                           "--disallowedTools=AskUserQuestion"])
 
     def test_workers_never_get_the_question_menu(self):

@@ -298,6 +298,11 @@ class ClaudeCodeAdapter(CliAdapter):
     # event tells the Manager a worker is waiting. Denied, the worker asks
     # in prose and ends its turn, which the Manager does see.
     WORKER_DISALLOWED = ("AskUserQuestion",)
+    # Every worker is Opus at medium effort (asked 2026-09-10), on launch
+    # and on resume alike, whatever the user's own default is. Not fast
+    # mode: that is the Boss's alone. "opus" is the alias, so it follows
+    # the current Opus.
+    WORKER_MODEL = ("--model=opus", "--effort=medium")
 
     def launch_argv(self, prompt: str, permission_mode: str,
                     session_id: str | None = None) -> list[str]:
@@ -306,13 +311,14 @@ class ClaudeCodeAdapter(CliAdapter):
         # tool name - the worker launches idle with no goal (measured on
         # claude 2.1.251).
         argv = [self.binary, "--permission-mode", permission_mode,
+                *self.WORKER_MODEL,
                 "--disallowedTools=" + ",".join(self.WORKER_DISALLOWED)]
         if session_id:
             argv += ["--session-id", session_id]
         return argv + [prompt]
 
     def resume_argv(self, session_id: str) -> list[str]:
-        return [self.binary, "--resume", session_id,
+        return [self.binary, "--resume", session_id, *self.WORKER_MODEL,
                 "--disallowedTools=" + ",".join(self.WORKER_DISALLOWED)]
 
     def prompt_ready(self, screen: str) -> bool:
