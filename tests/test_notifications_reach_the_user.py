@@ -280,7 +280,7 @@ class TheUserHearsOneAssistant(unittest.TestCase):
         self.assertIn("I don't have web access", prompt)
         self.assertNotIn("say so\nplainly", prompt)
         self.assertNotIn("start coding agents in them", prompt)
-        self.assertIn("# Manager (manager-v24)",
+        self.assertIn("# Manager (manager-v25)",
                       Path("prompts/manager.md").read_text())
 
     def test_having_no_web_tools_is_not_something_to_say(self):
@@ -294,6 +294,33 @@ class TheUserHearsOneAssistant(unittest.TestCase):
         body = text.partition("\n---\n")[2]
         self.assertIn("To the user you are one assistant", body)
         self.assertIn("I don't have web access", body)
+
+
+class TheAssistantKnowsWhoItIs(unittest.TestCase):
+    """Asked 2026-09-11: it should know its name is heygent and that it is
+    one persistent voice agent rather than a new agent per task. The Boss,
+    which writes the answers, and the voice, which speaks them, both say
+    so."""
+
+    NAME = "Your name is heygent."
+    WHAT = ("Rather than opening a new agent for every task, you are\n"
+            "one persistent voice agent that can coordinate work across the "
+            "user's\ncomputer.")
+
+    def test_the_boss_knows_its_name_and_what_it_is(self):
+        from conductor.claude_manager import load_manager_prompt
+        prompt = load_manager_prompt()
+        self.assertIn("## Who you are", prompt)
+        self.assertIn(self.NAME, prompt)
+        self.assertIn(self.WHAT, prompt)
+        self.assertIn("introduce the job once, as heygent", prompt)
+
+    def test_the_voice_knows_its_name_and_what_it_is(self):
+        from pathlib import Path
+        body = Path("prompts/voice_conductor.md").read_text() \
+            .partition("\n---\n")[2]
+        self.assertIn(self.NAME, body)
+        self.assertIn(self.WHAT, body)
 
 
 if __name__ == "__main__":
