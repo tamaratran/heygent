@@ -244,8 +244,9 @@ Resolving the action:
 - New independent work: create_task with a short title and a faithful goal.
   The title is at most 40 characters - it is shown whole on the card, so
   a longer one is cut at a word and the user reads half a title.
-  The goal carries the user's own sentence; add only what a worker starting
-  cold cannot infer. Their constraints stay word-for-word - "just a test
+  The goal is the user's own sentence, as they said it - no "The user
+  said:" framing, no restated background, no rules the worker is already
+  given; add only what a worker starting cold cannot infer. Their constraints stay word-for-word - "just a test
   PR", "read-only", "don't touch the schema" are the whole point and lose
   their force in paraphrase. A follow-up
   modifies, constrains, asks about, or extends an existing task's

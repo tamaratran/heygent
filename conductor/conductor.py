@@ -40,24 +40,17 @@ MANAGER_TOOLS = ("create_task", "list_tasks", "inspect_task", "send_to_task",
 
 def build_worker_prompt(task: Task, project_context: str,
                         workspace: Workspace | None = None) -> str:
-    """The first message a fresh worker session receives."""
-    parts = []
+    """The first message a fresh worker session receives: the goal as the
+    Boss wrote it, then the two machine rules. The user asked for their own
+    prompt and not a wrapper around it, so nothing else goes in - the CLI
+    already states its working directory and branch, and the title is for
+    the card, not the worker. `workspace` is accepted for callers that
+    still pass it."""
+    parts = [task.goal.strip() or task.title]
     if project_context.strip():
-        parts.append(f"Project context:\n{project_context.strip()}")
-    # Name the workspace explicitly. The provider's own preamble states the
-    # cwd, but a worktree looks nothing like the project the user named out
-    # loud, and a worker that does not connect the two invents paths.
-    workspace = workspace or task.workspace
-    if workspace is not None:
-        where = f"Your workspace: {workspace.path}"
-        if workspace.branch:
-            where += f"\nYour branch: {workspace.branch} (already checked out)"
-        parts.append(where)
-    parts.append(f"Your task: {task.title}\n\nGoal: {task.goal}")
-    if task.computer:
-        parts.append(computer.worker_brief())
-    else:
-        parts.append(SHARED_MACHINE_RULE)
+        parts.append(project_context.strip())
+    parts.append(computer.worker_brief() if task.computer
+                 else SHARED_MACHINE_RULE)
     parts.append(ASK_THEN_WAIT_RULE)
     return "\n\n".join(parts)
 
@@ -67,31 +60,23 @@ def build_worker_prompt(task: Task, project_context: str,
 # its own Live session, and played the model's reply through the speakers
 # while the user was mid-conversation with the product. Nothing had told it
 # the machine was in use. The rule is about the machine, not the task, so
-# it is not left to the manager to remember per task.
+# it is not left to the manager to remember per task. The exception exists
+# because things opened with -g landed behind the voice session.
 SHARED_MACHINE_RULE = (
-    "This machine is in use by the user right now, and they are talking to "
-    "a voice assistant on it. Do not play audio, use the speakers or the "
-    "microphone, open windows, take focus, or send keystrokes to other "
-    "apps. The one exception is something the user asked to see: when "
-    "you open an app, a tab, a file or a settings pane FOR them, bring "
-    "it to the front (open -a without -g, or activate the app) rather "
-    "than leaving it behind the voice session, unless they asked for it "
-    "in the background. Test audio and UI paths with files and fakes; if "
-    "a real device is the only way to verify something, report that and "
-    "stop.")
+    "The user is on this machine, talking to a voice assistant: do not "
+    "play audio, use the microphone, take focus or type into other apps; "
+    "test those paths with files and fakes. If you open something for "
+    "the user, bring it to the front (no -g) unless they asked for it in "
+    "the background.")
 
 # The user answers by voice, relayed through a manager, so an answer takes
 # seconds to minutes to arrive as the next message. A worker that asked
 # "badge only, or the full CI workflow?" and then wrote both files while
 # waiting had its work reverted when the answer picked one.
 ASK_THEN_WAIT_RULE = (
-    "When you need the user's decision - which option, whether to "
-    "proceed, what scope - ask it in plain text and end your turn there. "
-    "Never use an interactive option menu to ask: the user answers by "
-    "voice and cannot operate a menu. Do not act on "
-    "your own recommendation while the answer is on its way: it arrives "
-    "as your next message, and anything done before it may have to be "
-    "undone.")
+    "If you need the user's decision, ask in plain text (no option menus - "
+    "they answer by voice) and end your turn there; do not act on your "
+    "own recommendation before the answer comes.")
 
 
 class Conductor:

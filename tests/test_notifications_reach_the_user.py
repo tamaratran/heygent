@@ -227,8 +227,8 @@ class WorkersAreToldTheMachineIsInUse(unittest.TestCase):
         definition and passed with the rule never sent."""
         from conductor.conductor import SHARED_MACHINE_RULE, build_worker_prompt
         from conductor.task_types import Task
-        self.assertIn("in use by the user", SHARED_MACHINE_RULE)
-        self.assertIn("Do not play audio", SHARED_MACHINE_RULE)
+        self.assertIn("on this machine", SHARED_MACHINE_RULE)
+        self.assertIn("do not play audio", SHARED_MACHINE_RULE)
         task = Task(id="task_a", project_id="p", title="Verify barge-in",
                     goal="Observe a real session", status="starting")
         brief = build_worker_prompt(task, "")
@@ -244,7 +244,7 @@ class WorkersAreToldTheMachineIsInUse(unittest.TestCase):
         from conductor.claude_manager import MANAGER_PROMPT_VERSION
         from conductor.conductor import SHARED_MACHINE_RULE
         self.assertIn("bring it to the front", SHARED_MACHINE_RULE)
-        self.assertIn("without -g", SHARED_MACHINE_RULE)
+        self.assertIn("no -g", SHARED_MACHINE_RULE)
         self.assertIn("asked for it in the background", SHARED_MACHINE_RULE)
         manager = Path("prompts/manager.md").read_text()
         self.assertIn(f"# Manager ({MANAGER_PROMPT_VERSION})", manager)

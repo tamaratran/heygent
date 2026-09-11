@@ -137,34 +137,23 @@ class WorkerPromptTest(unittest.TestCase):
                     goal="Add a count function.",
                     workspace=workspace)
 
-    def test_the_workspace_and_branch_are_named(self) -> None:
+    def test_the_brief_starts_with_the_goal_itself(self) -> None:
+        """The user asked for their own prompt, not a wrapper: no title,
+        workspace, branch or "Goal:" labels ahead of it."""
         from conductor.conductor import build_worker_prompt
         from conductor.task_types import Workspace
         ws = Workspace(path="/tmp/wt/task_1", branch="agent/task_1")
-        prompt = build_worker_prompt(self.task(), "", ws)
-        self.assertIn("/tmp/wt/task_1", prompt)
-        self.assertIn("agent/task_1", prompt)
-        self.assertIn("already checked out", prompt)
+        prompt = build_worker_prompt(self.task(ws), "", ws)
+        self.assertTrue(prompt.startswith("Add a count function.\n\n"))
+        for label in ("Your task", "Goal:", "Your workspace", "Your branch",
+                      "Add count", "/tmp/wt/task_1"):
+            self.assertNotIn(label, prompt)
 
-    def test_it_falls_back_to_the_task_s_own_workspace(self) -> None:
+    def test_a_goalless_task_falls_back_to_its_title(self) -> None:
         from conductor.conductor import build_worker_prompt
-        from conductor.task_types import Workspace
-        ws = Workspace(path="/tmp/wt/task_1", branch="agent/task_1")
-        prompt = build_worker_prompt(self.task(ws), "")
-        self.assertIn("/tmp/wt/task_1", prompt)
-
-    def test_a_workspaceless_task_still_gets_a_prompt(self) -> None:
-        from conductor.conductor import build_worker_prompt
-        prompt = build_worker_prompt(self.task(), "")
-        self.assertIn("Your task: Add count", prompt)
-        self.assertNotIn("Your workspace", prompt)
-
-    def test_the_goal_survives_intact(self) -> None:
-        from conductor.conductor import build_worker_prompt
-        from conductor.task_types import Workspace
-        prompt = build_worker_prompt(
-            self.task(), "", Workspace(path="/tmp/w", branch="b"))
-        self.assertIn("Add a count function.", prompt)
+        from conductor.task_types import Task
+        task = Task(id="task_1", project_id="p", title="Add count", goal="")
+        self.assertTrue(build_worker_prompt(task, "").startswith("Add count"))
 
     def test_every_brief_says_ask_then_wait(self) -> None:
         """A worker that asked which option and then acted on its own
