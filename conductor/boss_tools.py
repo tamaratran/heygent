@@ -50,7 +50,7 @@ def fit_title(title: str) -> str:
 
 # A Boss that cannot do these is not a functioning Boss. Startup refuses
 # to mark it ready without them.
-REQUIRED_TOOLS = ("find_project", "list_open_sessions", "inspect_task",
+REQUIRED_TOOLS = ("list_open_sessions", "inspect_task",
                   "create_task", "send_to_task", "focus_task")
 
 # The spec's vocabulary for the same operations, for anyone reading the
@@ -67,9 +67,7 @@ SPEC_NAMES = {
 SCHEMAS = {
     # project tools
     "list_projects": {},
-    "find_project": {"query": str},
     "inspect_project": {"project_id": str},
-    "register_project": {"path": str},
     # task tools
     "create_task": {"project": str, "title": str, "goal": str,
                     "background": bool, "computer": bool, "provider": str},
@@ -107,12 +105,7 @@ OPTIONAL = {
 
 DESCRIPTIONS = {
     "list_projects": "List known projects with active-task counts.",
-    "find_project": "Locate a project by name; returns ranked candidates "
-                    "(registered ones carry registered_id). Browsing and "
-                    "disambiguation only - create_task resolves a name "
-                    "itself, so do not call this first.",
     "inspect_project": "One project's context and its tasks.",
-    "register_project": "Register a discovered project path for future use.",
     "create_task": "Start a new coding task in a project. provider is "
                    "optional: which CLI does the work - 'claude-code' "
                    "(default) or another the capability list says is "
@@ -120,7 +113,7 @@ DESCRIPTIONS = {
                    "names one. project is the "
                    "project as the user said it - a name, a path, or an "
                    "id - resolved and registered for you, so call this "
-                   "directly rather than find_project first; an ambiguous "
+                   "directly; an ambiguous "
                    "name comes back as an error naming the candidates. "
                    "title is what "
                    "the user reads on its card and in the sidebar: at most "

@@ -76,7 +76,10 @@ DISALLOWED = ("Bash", "Read", "Edit", "Write", "Glob", "Grep",
 # needs the fullscreen renderer ("tui": "fullscreen"), so that comes too.
 BOSS_MODEL = "opus"          # the alias: always the current Opus
 BOSS_EFFORT = "low"
-BOSS_SETTINGS = {"fastMode": True, "tui": "fullscreen", "viewMode": "focus"}
+# No thinking at all (asked the same day for "zero effort"): low is the
+# lowest --effort there is, so alwaysThinkingEnabled false does the rest.
+BOSS_SETTINGS = {"fastMode": True, "alwaysThinkingEnabled": False,
+                 "tui": "fullscreen", "viewMode": "focus"}
 # How long the launched session gets to bring boss-mcp up and say hello.
 MCP_CONNECT_TIMEOUT_S = 90.0
 # How the Boss reaches its tools: "stdio" starts boss-mcp, the packaged

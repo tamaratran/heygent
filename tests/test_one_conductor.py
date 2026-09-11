@@ -245,8 +245,7 @@ class TheRosterIsWhatTheConductorIsActuallySupervising(unittest.TestCase):
             home=self.home, runtime=SweepableRuntime(),
             manager=FakeManagerBackend(), search_roots=[roots],
             workspace_factory=lambda project: FakeWorkspaceManager())
-        self.project = asyncio.run(self.gc.handle_action(
-            "register_project", {"path": str(roots / "posely")}))["project_id"]
+        self.project = self.gc.register_project(str(roots / "posely"))["project_id"]
 
     def tearDown(self) -> None:
         self.tmp.cleanup()

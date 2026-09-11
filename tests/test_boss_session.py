@@ -334,6 +334,7 @@ class TheBossRunsInAWindow(unittest.TestCase):
         self.assertEqual(argv[argv.index("--model") + 1], "opus")
         settings = json.loads(argv[argv.index("--settings") + 1])
         self.assertIs(settings["fastMode"], True)
+        self.assertIs(settings["alwaysThinkingEnabled"], False)
         self.assertEqual(settings["viewMode"], "focus")
         self.assertEqual(settings["tui"], "fullscreen")
         self.assertEqual(settings["hooks"], {"Stop": []})

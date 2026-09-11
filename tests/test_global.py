@@ -42,17 +42,14 @@ class GlobalConductorTest(unittest.TestCase):
         return asyncio.run(coro)
 
     def register(self, name: str) -> str:
-        result = self.run_async(self.conductor.handle_action(
-            "register_project", {"path": str(self.roots / name)}))
+        result = self.conductor.register_project(str(self.roots / name))
         return result["project_id"]
 
     # -- Scenario A: no project selected, named project, create ----------
     def test_scenario_a_create_in_named_project(self) -> None:
-        candidates = self.run_async(self.conductor.handle_action(
-            "find_project", {"query": "Posely"}))
+        candidates = self.conductor.find_project("Posely")
         self.assertEqual(len(candidates), 1)
-        pid = self.run_async(self.conductor.handle_action(
-            "register_project", {"path": candidates[0]["path"]}))["project_id"]
+        pid = self.conductor.register_project(candidates[0]["path"])["project_id"]
         task = self.run_async(self.conductor.handle_action(
             "create_task", {"project_id": pid, "title": "Fix login",
                             "goal": "Fix the login bug"}))
@@ -178,10 +175,14 @@ class GlobalConductorTest(unittest.TestCase):
     def test_the_tool_surface_is_exactly_this(self) -> None:
         """Named rather than counted: a bare number says the surface grew
         but not what appeared, which is the part worth reviewing."""
+        # Removed 2026-09-10: create_task locates the project itself.
+        from conductor.boss_tools import REQUIRED_TOOLS, SCHEMAS
+        for gone in ("find_project", "register_project"):
+            self.assertNotIn(gone, SCHEMAS)
+            self.assertNotIn(gone, REQUIRED_TOOLS)
         self.assertEqual(set(MANAGER_TOOLS), {
             # projects
-            "list_projects", "find_project", "inspect_project",
-            "register_project",
+            "list_projects", "inspect_project",
             # tasks
             "create_task", "list_tasks", "inspect_task", "send_to_task",
             "pause_task", "interrupt_task", "resume_task",

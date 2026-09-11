@@ -53,8 +53,8 @@ EXPECTED_ACTIONS = MANAGER_TOOLS + ("clarify", "answer_directly")
 MUTATING = ("create_task", "send_to_task", "pause_task", "interrupt_task",
             "resume_task", "cancel_task", "handoff_task_context",
             "approve_task_action", "deny_task_action")
-READ_ONLY_EXPECTED = ("list_projects", "find_project", "inspect_project",
-                      "register_project", "list_tasks", "list_subagents",
+READ_ONLY_EXPECTED = ("list_projects", "inspect_project",
+                      "list_tasks", "list_subagents",
                       "inspect_task",
                       "focus_task")    # navigation: no worker side effects
 
@@ -141,7 +141,7 @@ def seed(conductor: GlobalConductor, runtime: FakeCodingAgentRuntime,
     """Build the case's world; returns (default project id, name -> id).
 
     A project spec with "unregistered": true exists only on disk - the
-    Manager has to discover and register it (find_project -> register),
+    Manager names it in create_task, which discovers and registers it,
     which is how unknown-project cases are expressed.
     """
     specs = case.projects or [{"name": "Default", "tasks": case.tasks}]

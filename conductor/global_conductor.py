@@ -40,8 +40,11 @@ from .storage import now_iso
 from .task_types import Task
 from .workspaces import SharedWorkspaceManager, WorkspaceManager
 
-PROJECT_TOOLS = ("list_projects", "find_project", "inspect_project",
-                 "register_project")
+# No find_project or register_project (removed 2026-09-10): create_task
+# resolves and registers a project from its name or path, and an ambiguous
+# name comes back as an error listing the candidates' paths. The methods
+# stay; the Boss just is not handed them.
+PROJECT_TOOLS = ("list_projects", "inspect_project")
 TASK_TOOLS = ("create_task", "list_tasks", "list_subagents", "inspect_task",
               "send_to_task", "pause_task", "interrupt_task", "resume_task",
               "complete_task", "cancel_task", "handoff_task_context",
@@ -68,7 +71,7 @@ def _age(seconds: float) -> str:
 # Read-only tools may run freely during a turn; only these change the world.
 MUTATING_TOOLS = ("create_task", "send_to_task", "interrupt_task",
                   "resume_task", "complete_task", "cancel_task",
-                  "register_project", "handoff_task_context")
+                  "handoff_task_context")
 
 ACTIVE_STATUSES = ("starting", "running", "waiting_for_user", "interrupted")
 
@@ -1821,7 +1824,7 @@ class GlobalConductor:
         with activity counts and the conversational focus - never every task
         of every project (spec 22), and never linear in the registry: beyond
         max_projects, only projects with active work are named, the rest are
-        a count reachable through find_project."""
+        a count, each reachable by name through create_task."""
         lines = []
         # Outstanding decisions come first: a worker waiting on the user is
         # the most important thing in any turn, and the Manager acts on it
@@ -1878,7 +1881,7 @@ class GlobalConductor:
                 lines.append(summary)
             if hidden:
                 lines.append(f"...and {hidden} more registered projects; "
-                             "use find_project to reach them.")
+                             "name one in create_task to reach it.")
         focus = self.projects.focus()
         if focus.get("project_id"):
             lines.append(f"Recent focus: project {focus['project_id']}"

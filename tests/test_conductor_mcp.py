@@ -62,7 +62,7 @@ class TheEndpointServesItsBoss(unittest.TestCase):
 
     def endpoint(self, **kw) -> ConductorMcp:
         return ConductorMcp(self.conductor, json.dumps, self.home,
-                            names=("find_project", "inspect_project"), **kw)
+                            names=("search_sessions", "inspect_project"), **kw)
 
     def test_the_tools_are_listed_and_called_with_the_credential(self):
         mcp = self.endpoint()
@@ -74,7 +74,7 @@ class TheEndpointServesItsBoss(unittest.TestCase):
             try:
                 async def do(session):
                     tools = await session.list_tools()
-                    result = await session.call_tool("find_project",
+                    result = await session.call_tool("search_sessions",
                                                      {"query": "posely"})
                     return [t.name for t in tools.tools], result
                 names, result = await talk(mcp.url, token, do)
@@ -83,13 +83,13 @@ class TheEndpointServesItsBoss(unittest.TestCase):
                 await mcp.stop()
             return names, result, connected
         names, result, connected = run(scenario())
-        self.assertEqual(names, ["find_project", "inspect_project"])
+        self.assertEqual(names, ["search_sessions", "inspect_project"])
         self.assertEqual(self.conductor.actions,
-                         [("find_project", {"query": "posely"})])
+                         [("search_sessions", {"query": "posely"})])
         self.assertIn('"query": "posely"', result.content[0].text)
         self.assertIsNotNone(connected, "initialize marks the Boss connected")
-        self.assertIn("find_project", connected["tools"])
-        self.assertEqual(mcp.drain()[0].tool, "find_project")
+        self.assertIn("search_sessions", connected["tools"])
+        self.assertEqual(mcp.drain()[0].tool, "search_sessions")
 
     def test_without_the_credential_nothing_is_served(self):
         async def scenario():
@@ -168,7 +168,7 @@ class TheEndpointServesItsBoss(unittest.TestCase):
             again.expect("boss_1", token)
             try:
                 result = await talk(url, token,
-                                    lambda s: s.call_tool("find_project", {"query": "x"}))
+                                    lambda s: s.call_tool("search_sessions", {"query": "x"}))
             finally:
                 await again.stop()
             return url == again.url, result
@@ -191,7 +191,7 @@ class TheBossIsPointedAtTheEndpoint(unittest.TestCase):
         mcp.port = 43127
         backend.attach_bridge(mcp)
         backend.boss_dir.mkdir(parents=True)
-        path = backend._write_mcp_config(None, ("find_project",), "boss_9", "tok")
+        path = backend._write_mcp_config(None, ("search_sessions",), "boss_9", "tok")
         entry = json.loads(path.read_text())["mcpServers"]["boss"]
         self.assertEqual(entry["type"], "http")
         self.assertEqual(entry["url"], "http://127.0.0.1:43127/mcp")

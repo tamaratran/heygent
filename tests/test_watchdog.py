@@ -72,9 +72,7 @@ class WatchdogTest(unittest.TestCase):
         return self.conductor._find_task(task_id)[1].status
 
     def a_running_task(self, title: str = "Fix login"):
-        pid = self.go(self.conductor.handle_action(
-            "register_project", {"path": str(self.roots / "posely")}))[
-                "project_id"]
+        pid = self.conductor.register_project(str(self.roots / "posely"))["project_id"]
         task = self.go(self.conductor.handle_action(
             "create_task", {"project_id": pid, "title": title,
                             "goal": "g"}))
@@ -576,9 +574,7 @@ class IdleRetirementTest(unittest.TestCase):
 
     def a_task_left(self, gc: GlobalConductor, status: str,
                     result: dict | None = None):
-        pid = self.go(gc.handle_action(
-            "register_project", {"path": str(self.roots / "posely")}))[
-                "project_id"]
+        pid = gc.register_project(str(self.roots / "posely"))["project_id"]
         task = self.go(gc.handle_action(
             "create_task", {"project_id": pid, "title": "Fix login",
                             "goal": "g"}))
