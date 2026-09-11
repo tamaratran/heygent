@@ -764,5 +764,93 @@ class ANewlineIsNotEnter(Base):
         self.assertIn("jq -r", text)
 
 
+class TheTitleIsALabelNotIdentity(Base):
+    """dress() renames a workspace to the task's own words. The stable
+    session name stays in the description stamp, so nothing renamed is
+    ever lost - and a user's own workspace still answers only to its
+    title."""
+
+    def test_a_renamed_workspace_is_still_found(self):
+        rt = self.runtime(known=False, workspaces=[
+            ours(custom_title="posely: Fix login flake")])
+        self.assertEqual(rt._lookup("cond_task_a"), ("WS-UUID", "SF-UUID"))
+
+    def test_list_sessions_reports_the_stable_name(self):
+        rt = self.runtime(known=False, workspaces=[
+            ours(custom_title="posely: Fix login flake")])
+        out = rt._tmux("list-sessions")
+        self.assertEqual(out.stdout.strip(), "cond_task_a")
+
+    def test_an_unstamped_workspace_answers_to_its_title(self):
+        rt = self.runtime(known=False, workspaces=[
+            {"id": "WS-UUID", "custom_title": "cond_task_a",
+             "ref": "workspace:2", "description": None,
+             "current_directory": "/home/.voice-conductor/workspaces/p/t"}])
+        rt.transcript = mock.Mock(dir="/home/.voice-conductor/executions")
+        self.assertEqual(rt._lookup("cond_task_a"), ("WS-UUID", "SF-UUID"))
+
+
+class DressingTheWorkspace(Base):
+    """The sidebar as a routing map: title, colour, pin, flash."""
+
+    def actions(self):
+        return [c for c in self.calls if c[0] == "workspace-action"]
+
+    def test_dress_titles_colours_pins_and_flashes(self):
+        rt = self.runtime(known=True)
+        self.assertTrue(rt.dress("cond_task_a", title="posely: Fix login",
+                                 state="attention", flash=True, pin=True))
+        rename = next(c for c in self.actions() if "rename" in c)
+        self.assertIn("posely: Fix login", rename)
+        colour = next(c for c in self.actions() if "set-color" in c)
+        self.assertIn("Orange", colour)
+        self.assertTrue(any("pin" in c for c in self.actions()))
+        flash = next(c for c in self.calls if c[0] == "trigger-flash")
+        self.assertIn("WS-UUID", flash)
+        self.assertIn("SF-UUID", flash)
+
+    def test_a_state_also_writes_the_progress_label(self):
+        """The custom sidebar reads workspace progress, not status pills,
+        so the delegation loop is written there too."""
+        rt = self.runtime(known=True)
+        self.assertTrue(rt.dress("cond_task_a", state="working"))
+        bar = next(c for c in self.calls if c[0] == "set-progress")
+        self.assertIn("working \u2014 reports back to Boss", bar)
+        self.assertIn("WS-UUID", bar)
+
+    def test_a_status_pill_is_set_under_the_conductor_key(self):
+        rt = self.runtime(known=True)
+        self.assertTrue(rt.dress("cond_task_a",
+                                 status="\u25c0 Boss 14:32"))
+        pill = next(c for c in self.calls if c[0] == "set-status")
+        self.assertIn("conductor", pill)
+        self.assertIn("\u25c0 Boss 14:32", pill)
+        self.assertIn("WS-UUID", pill)
+
+    def test_only_what_was_asked_for_is_touched(self):
+        rt = self.runtime(known=True)
+        self.assertTrue(rt.dress("cond_task_a", state="done"))
+        self.assertFalse(any("rename" in c for c in self.actions()))
+        self.assertFalse(any("pin" in c for c in self.actions()))
+        colour = next(c for c in self.actions() if "set-color" in c)
+        self.assertIn("Green", colour)
+
+    def test_a_missing_workspace_cannot_be_dressed(self):
+        rt = self.runtime(known=False, workspaces=[])
+        self.assertFalse(rt.dress("cond_task_a", title="x", state="working"))
+        self.assertEqual(self.actions(), [])
+
+
+class ShowingTheDelegationSidebar(Base):
+    """select_sidebar puts the conductor's custom sidebar in cmux's left
+    sidebar picker - once, on first install; after that the choice is the
+    user's."""
+
+    def test_the_sidebar_is_selected_by_name(self):
+        rt = self.runtime()
+        self.assertTrue(rt.select_sidebar("conductor"))
+        self.assertIn(("sidebar", "select", "conductor"), self.calls)
+
+
 if __name__ == "__main__":
     unittest.main()

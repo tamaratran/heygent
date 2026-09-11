@@ -78,6 +78,26 @@ MANAGED_MARK = "conductor-managed agent session"
 # workspace-action offers pin/rename/set-description/set-color and nothing
 # about groups. Grouping stays a thing the user can do by hand.
 MANAGED_COLOR = "Teal"
+# The sidebar as a routing map: the Boss keeps one colour, and a worker's
+# colour follows its task - being worked, waiting on the user, finished,
+# failed. Names from cmux's own palette (workspace-action --help).
+STATE_COLORS = {"boss": "Purple", "working": MANAGED_COLOR,
+                "attention": "Orange", "done": "Green", "failed": "Red"}
+
+
+def managed_name(workspace: dict) -> str:
+    """The stable session name of a workspace, title notwithstanding.
+
+    The visible title is a label for the user - dress() renames it to the
+    task's own words - so identity lives in the description stamp, which
+    nothing renames. Workspaces from before the stamp (or never dressed)
+    still answer to their title.
+    """
+    description = workspace.get("description") or ""
+    prefix = f"{MANAGED_MARK}: "
+    if description.startswith(prefix):
+        return description[len(prefix):].strip()
+    return workspace.get("custom_title") or ""
 
 
 @dataclass
@@ -298,7 +318,7 @@ class CmuxClaudeRuntime(TmuxClaudeRuntime):
                 return self.places[name]
             self.places.pop(name, None)       # cmux restarted under us
         for workspace in self._workspaces():
-            if workspace.get("custom_title") != name:
+            if managed_name(workspace) != name:
                 continue
             if not self._is_ours(workspace):
                 # Same name, not our work. Driving it would type into
@@ -342,7 +362,7 @@ class CmuxClaudeRuntime(TmuxClaudeRuntime):
                 workspaces = json.loads(listed.stdout).get("workspaces", [])
             except (ValueError, AttributeError):
                 return _Result(1, "", "cmux workspace listing was not JSON")
-            names = [w.get("custom_title") or "" for w in workspaces]
+            names = [managed_name(w) for w in workspaces]
             return _Result(0, "\n".join(n for n in names if n))
         place = self._lookup(target) if target else None
         if place is None:
@@ -497,6 +517,66 @@ class CmuxClaudeRuntime(TmuxClaudeRuntime):
         if sess is None:
             return
         self._bring_forward(sess.name)
+
+    def select_sidebar(self, name: str) -> bool:
+        """Show a custom sidebar in cmux's left sidebar picker. Called
+        once, when the file is first installed; after that which sidebar
+        shows is the user's choice."""
+        return self._cmux("sidebar", "select", name).returncode == 0
+
+    # The one sidebar pill this app owns on a workspace. Keyed, so other
+    # tools' pills (build, deploy) are never touched.
+    STATUS_KEY = "conductor"
+
+    # The delegation loop written where a sidebar can read it: cmux's
+    # per-workspace progress field ({value, label}) is exposed to custom
+    # sidebars, and cmux itself never tracks our workers as agents - so
+    # this is the one live channel for "still working on the Boss's
+    # words" vs "handed back". Labels are the sidebar's subtitles; the
+    # conductor sidebar keys its spinner off the "working" one.
+    STATE_PROGRESS = {"working": ("0.5", "working \u2014 reports back to Boss"),
+                      "attention": ("0.5", "waiting on you"),
+                      "done": ("1.0", "reported back to Boss"),
+                      "failed": ("1.0", "failed \u2014 told the Boss")}
+
+    def dress(self, name: str, title: str | None = None,
+              state: str | None = None, flash: bool = False,
+              pin: bool = False, status: str | None = None) -> bool:
+        """Make a managed workspace legible in the sidebar.
+
+        The stable session name is bookkeeping; the person watching the
+        sidebar needs the task's own words, a colour that says how it is
+        going, and a flash on the workspace the Boss just routed words to.
+        Identity is untouched: lookups go by the description stamp (see
+        managed_name), so a renamed workspace is still found. Best effort
+        like _bring_forward - a workspace that cannot be dressed must not
+        fail the task running in it.
+        """
+        place = self._lookup(name)
+        if place is None:
+            return False
+        workspace, surface = place
+        if title:
+            self._cmux("workspace-action", "--action", "rename",
+                       "--workspace", workspace, "--title", title)
+        if state in STATE_COLORS:
+            self._cmux("workspace-action", "--action", "set-color",
+                       "--workspace", workspace,
+                       "--color", STATE_COLORS[state])
+        if pin:
+            self._cmux("workspace-action", "--action", "pin",
+                       "--workspace", workspace)
+        if status:
+            self._cmux("set-status", self.STATUS_KEY, status,
+                       "--workspace", workspace)
+        if state in self.STATE_PROGRESS:
+            value, label = self.STATE_PROGRESS[state]
+            self._cmux("set-progress", value, "--label", label,
+                       "--workspace", workspace)
+        if flash:
+            self._cmux("trigger-flash", "--workspace", workspace,
+                       "--surface", surface)
+        return True
 
     # An argument this long, or with a newline in it, is not typed at the
     # shell. Measured, two launches in a row: a worker's brief - 1,500

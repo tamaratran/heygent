@@ -250,6 +250,36 @@ def ensure_socket_access(config_path: Path | None = None,
     return password
 
 
+SIDEBAR_SOURCE = Path(__file__).parent / "sidebars" / "conductor.swift"
+SIDEBAR_DEST = Path.home() / ".config/cmux/sidebars/conductor.swift"
+
+
+def install_sidebar(source: Path = SIDEBAR_SOURCE,
+                    dest: Path = SIDEBAR_DEST) -> bool:
+    """Put the delegation sidebar where cmux reads custom sidebars.
+
+    The file shows the Boss and, under it, a clickable bar per session it
+    delegated to, with a loading indicator until the worker reports back.
+    Copying only on change keeps cmux's hot-reload quiet on ordinary
+    launches; SHOWING the sidebar stays the user's choice (right-click the
+    sidebar button and pick "conductor"), so nothing of theirs is
+    overridden. Returns whether the file was (re)written.
+    """
+    try:
+        text = source.read_text()
+        if dest.exists() and dest.read_text() == text:
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text)
+        return True
+    except OSError:
+        from .observability import application_log
+        application_log("runtime", "cmux.sidebar_install_failed",
+                        "could not install the conductor sidebar",
+                        severity="warning", exc_info=True)
+        return False
+
+
 def find_executable() -> str | None:
     """The cmux binary, by known location before $PATH.
 

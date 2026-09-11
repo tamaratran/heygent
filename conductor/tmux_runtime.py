@@ -1149,6 +1149,18 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         """Put a running session's window in front of the user. Nothing
         to do for a tmux pane: the Terminal window is the user's own."""
 
+    def dress(self, name: str, title: str | None = None,
+              state: str | None = None, flash: bool = False,
+              pin: bool = False, status: str | None = None) -> bool:
+        """Label a session's window for the person watching it. tmux has
+        no sidebar and the session name IS the label, so there is nothing
+        to do - a host verb, so callers need not ask which host this is."""
+        return False
+
+    def select_sidebar(self, name: str) -> bool:
+        """tmux has no sidebar to select. A host verb, like dress."""
+        return False
+
     async def _adopt_known(self, task_id: str, name: str,
                            working_directory: str, session_id: str,
                            project_dir: Path) -> str:

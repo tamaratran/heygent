@@ -26,6 +26,7 @@ sharing the async client.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -33,6 +34,7 @@ import subprocess
 
 from .cmux_setup import (find_executable, needs_repair, needs_window, repair,
                           unavailable_reason)
+from .cmux_runtime import managed_name
 from .surfaces import SessionSurface, SurfaceHandle, SurfaceRequest
 from .tmux_runtime import session_name
 
@@ -114,6 +116,16 @@ class CmuxSurface(SessionSurface):
         return out
 
     def _workspace_titled(self, title: str) -> tuple[str, str] | None:
+        # The JSON listing carries the description, and identity lives
+        # there once a workspace is dressed with a human title (see
+        # cmux_runtime.managed_name). The text listing only knows titles.
+        try:
+            listed = json.loads(self._run("workspace", "list", "--json"))
+        except (ValueError, RuntimeError, CmuxUnavailableError):
+            listed = {}
+        for workspace in listed.get("workspaces", []):
+            if managed_name(workspace) == title:
+                return workspace.get("id", ""), title
         for ref, uuid, name in self._rows(
                 self._run("list-workspaces", "--id-format", "both")):
             if name == title:
