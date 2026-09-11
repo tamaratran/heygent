@@ -1284,34 +1284,27 @@ class TheMirror(unittest.TestCase):
         self.assertEqual(toast["rows"][0]["task_id"], "2026")
 
     def test_the_boss_reply_is_drawn_as_it_is_written(self):
-        """The reply so far reaches open pages while the turn is on the
-        page - never into history, where a reload would replay every
-        draft; the settled turn follows. No turn on the page, no draft."""
+        """Paragraphs arrive as deltas while the turn is on the page; the
+        settled turn follows. With no turn on the page, nothing is drawn."""
         async def go():
             client = app()
             await client.start()
             await client.start_thread()
             web = CodexWeb(client, home=None)
-            page = asyncio.Queue()
-            web._watchers.append(page)
-            web.mirror_draft("stray prose")          # no turn on the page
+            web.mirror_delta("stray prose")          # no turn on the page
             web.mirror_prompt("start a worker")
-            web.mirror_draft("Starting a worker")
-            web.mirror_draft("  ")
-            web.mirror_draft("Starting a worker\non the login bug.")
-            web.mirror_answer("Starting a worker on the login bug.")
+            web.mirror_delta("Starting a worker.")
+            web.mirror_delta("  ")
+            web.mirror_delta("It is up.")
+            web.mirror_answer("Starting a worker.\n\nIt is up.")
             await client.stop()
-            sent = []
-            while not page.empty():
-                sent.append(page.get_nowait())
-            return web.history, sent
-        history, sent = run(go())
-        self.assertNotIn("draft", [m["kind"] for m in history])
-        self.assertEqual([m["kind"] for m in sent if m["kind"] != "state"],
-                         ["you", "draft", "draft", "turn"])
-        self.assertEqual([m["text"] for m in sent if m["kind"] == "draft"],
-                         ["Starting a worker",
-                          "Starting a worker\non the login bug."])
+            return web.history
+        history = run(go())
+        kinds = [m["kind"] for m in history if m["kind"] != "state"]
+        self.assertEqual(kinds, ["you", "delta", "delta", "turn"])
+        deltas = [m["text"] for m in history if m["kind"] == "delta"]
+        self.assertEqual(deltas, ["Starting a worker.\n\n", "It is up.\n\n"])
+
 
 class TheBossApp(unittest.TestCase):
     def test_a_typed_turn_goes_to_the_conductor(self):

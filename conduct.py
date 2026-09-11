@@ -1213,7 +1213,7 @@ async def main() -> int:
                 asyncio.get_event_loop().run_in_executor(None, raise_by_pid)
 
             if isinstance(conductor.manager, PtyManagerBackend):
-                conductor.manager.on_draft = boss_page.mirror_draft
+                conductor.manager.on_prose = boss_page.mirror_delta
                 if window_bridge is not None:
                     conductor.manager.show_window = show_boss_window
                 else:
@@ -1241,7 +1241,7 @@ async def main() -> int:
             if boss_page is not None:
                 await boss_page.stop()
             if isinstance(conductor.manager, PtyManagerBackend):
-                conductor.manager.on_draft = None
+                conductor.manager.on_prose = None
             boss_page, boss_window = None, None
 
     def boss_interim(text: str) -> None:

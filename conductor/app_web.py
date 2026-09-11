@@ -618,12 +618,6 @@ function on(msg) {
     if (!streaming) streaming = bubble("codex");
     streaming.textContent += msg.text;
     follow();
-  } else if (msg.kind === "draft") {
-    // The Boss's reply so far, whole: replaces what the bubble held.
-    thinking(false);
-    if (!streaming) streaming = bubble("codex");
-    streaming.textContent = msg.text;
-    follow();
   } else if (msg.kind === "turn") {
     thinking(false);
     const box = streaming || bubble("codex");
@@ -1987,14 +1981,14 @@ class CodexWeb:
         self.push({"kind": "you", "text": text})
         self.push({"kind": "state", "busy": True})
 
-    def mirror_draft(self, text: str) -> None:
-        """The Boss's reply so far, drawn as it is written - the whole of
-        it each time, so a line read off the screen can be corrected by
-        the paragraph the transcript delivers. The turn's answer replaces
-        it when the turn settles. Only while a turn is on the page, and
-        never into history: a reload redraws the settled turn."""
+    def mirror_delta(self, text: str) -> None:
+        """A paragraph of the Boss's reply, drawn as it is written - the
+        turn's answer replaces it when the turn settles. Only while a
+        turn is on the page: prose answering a pushed worker update has
+        no bubble to go in."""
         if self.busy and text.strip():
-            self._send_all({"kind": "draft", "text": text})
+            self.push({"kind": "delta", "text": text.strip() + "\n\n",
+                       "item_id": ""})
 
     def mirror_answer(self, answer: str, seconds: float = 0.0) -> None:
         """The Boss's reply to a spoken utterance, settled on the page -

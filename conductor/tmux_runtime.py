@@ -1534,16 +1534,6 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         # nothing.
         return sess.status
 
-    async def read_screen(self, session_id: str) -> str | None:
-        """What the session's pane shows now, read off the loop - or None
-        when there is no pane to read. Looking only: nothing is typed."""
-        sess = self.sessions.get(session_id)
-        if sess is None:
-            return None
-        done = await self._off_loop(self._tmux, "capture-pane", "-t",
-                                    sess.name, "-p")
-        return done.stdout if done.returncode == 0 else None
-
     def live_session_names(self) -> set | None:
         """Every PTY tmux currently has, by name - or None if we could not
         ask.
