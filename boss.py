@@ -206,8 +206,8 @@ def _load(name: str, fallback: str) -> str:
 FRONTEND_INSTRUCTIONS = _load(
     "voice_agent.md",
     "You are the voice of Claude Code. The client runs everything the user "
-    "says itself; speak briefly while it works and relay its answers "
-    "conversationally.")
+    "says itself; speak briefly while it works, and say its answers as "
+    "they are written rather than rewording them.")
 
 CLAUDE_SYSTEM_PROMPT = _load(
     "claude_worker.md",
