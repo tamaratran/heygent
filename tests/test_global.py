@@ -33,6 +33,8 @@ class GlobalConductorTest(unittest.TestCase):
         self.conductor = GlobalConductor(
             home=base / "home", runtime=self.runtime, manager=self.backend,
             search_roots=[self.roots],
+            # The cap's own tests want a small one they can reach.
+            max_concurrent_tasks=3,
             workspace_factory=lambda project: FakeWorkspaceManager())
 
     def tearDown(self) -> None:
@@ -216,6 +218,16 @@ class GlobalConductorTest(unittest.TestCase):
         task = self.run_async(self.conductor.create_task("t3", "g",
                                                          project_id=posely))
         self.assertEqual(task.status, "running")
+
+    def test_no_cap_when_it_is_zero(self) -> None:
+        """boss.MAX_CONCURRENT_TASKS = 0 means the machine's own limits
+        decide, so nothing counts busy workers and nothing is refused."""
+        self.conductor.max_concurrent_tasks = 0
+        posely = self.register("posely")
+        for i in range(5):
+            task = self.run_async(self.conductor.create_task(
+                f"t{i}", "g", project_id=posely))
+            self.assertEqual(task.status, "running")
 
     def test_an_idle_worker_does_not_hold_a_slot(self) -> None:
         """Measured: every launch was refused for twenty minutes while
