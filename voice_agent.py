@@ -629,6 +629,8 @@ class VoiceAgent:
         self.session_told_holding = False # what the session was last told
         self.was_holding = False
         self.last_active = 0.0
+        self.words_at = 0.0               # when the last transcript word landed
+        self.heard_final = False          # the user turn is done: no more words
         self.claude_session: str | None = None
         self.stopping = False             # a stop the user asked for
         self.in_flight: set[str] = set()  # work items still running
@@ -967,6 +969,26 @@ class VoiceAgent:
                 continue            # the socket died mid-send; reconnecting
 
     REPLY_LINGER = 2.0        # seconds a finished reply stays up
+    CAPSULE_LINGER = 1.2      # seconds the capsule stays up once nothing new is on it
+    LATE_WORDS_WAIT = 2.5     # longest it waits after release for the transcript
+
+    def _capsule_can_go(self, now: float) -> bool:
+        """The key is up and what you said has had its moment on screen.
+
+        Words land a second or two behind the voice, so a short answer lands
+        after release, and hiding a fixed 1.2 s after release gave it almost
+        no time (2026-09-10: Fn up at 46.73 s, "Yes" landed at 47.57 s). With
+        the words or the caption showing, the capsule waits for the user turn
+        to finish and keeps the last word up CAPSULE_LINGER - but waits no
+        longer than LATE_WORDS_WAIT for a transcript that may never come, as
+        after a tap with nothing said.
+        """
+        since_release = now - self.last_active
+        if not (boss.CAPSULE_WORDS or boss.SHOW_CAPTION):
+            return since_release > self.CAPSULE_LINGER
+        if not self.heard_final and since_release < self.LATE_WORDS_WAIT:
+            return False
+        return now - max(self.last_active, self.words_at) > self.CAPSULE_LINGER
     # How long the words have to stop before a turn counts as over. The
     # live session announces no turn boundaries: it sends transcript
     # deltas, and a gap between them is all there is. Measured against a
@@ -1006,6 +1028,7 @@ class VoiceAgent:
         if not asked:
             return
         self.request = asked
+        self.heard_final = True      # the capsule can stop waiting
         self._emit("voice.utterance_completed", data={"text": asked[:300]})
         # What the user says goes to the Boss, spoken or typed: the work
         # starts the moment their words stop, before the frontend has
@@ -1096,6 +1119,7 @@ class VoiceAgent:
                     self.speaker.flush()
                 if not self.was_holding:
                     self.heard = ""              # a new utterance
+                    self.words_at, self.heard_final = 0.0, False
                     if boss.SHOW_CAPTION:
                         self.ui.send(heard="")
                     if boss.CAPSULE_WORDS:
@@ -1111,8 +1135,8 @@ class VoiceAgent:
                 self.reply_text = ""
                 self.ui.send(card=None)
             if self.ui.state != "hidden" and \
-                    time.monotonic() - self.last_active > 1.2:
-                # Linger a moment after release so the last words stay readable.
+                    self._capsule_can_go(time.monotonic()):
+                # Linger after release so the last words stay readable.
                 self.ui.send(state="hidden")
                 if boss.SHOW_CAPTION:
                     self.ui.send(heard="")
@@ -1538,6 +1562,7 @@ class VoiceAgent:
                     # Show it as it lands, so a misheard word is visible before
                     # it is acted on.
                     self.heard = without_noise(join_fragments([self.heard, text]))
+                    self.words_at = time.monotonic()
                     if boss.SHOW_CAPTION:
                         self.ui.send(heard=self.heard)
                     if boss.CAPSULE_WORDS:
