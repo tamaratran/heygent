@@ -173,7 +173,7 @@ Conductor the moment the deterministic pipeline decides it is
 meaningful (a finished turn, a failure, an approval or a question, an
 unexpected stop):
 
-    Worker update · Fix login (task_1a2b) finished a turn: tests pass
+    Your worker · Fix login (task_1a2b) finished a turn: tests pass
 
 Rules, each with a test in `tests/test_boss_updates.py`:
 
