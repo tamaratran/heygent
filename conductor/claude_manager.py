@@ -26,7 +26,7 @@ from .capabilities import capability_block
 from .observability import ObservabilityEvent, application_log
 from .task_types import Task
 
-MANAGER_PROMPT_VERSION = "manager-v25"
+MANAGER_PROMPT_VERSION = "manager-v26"
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts/manager.md"
 
 _FALLBACK_PROMPT = (

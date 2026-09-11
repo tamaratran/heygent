@@ -254,6 +254,24 @@ class WorkersAreToldTheMachineIsInUse(unittest.TestCase):
         worker = Path("prompts/claude_worker.md").read_text()
         self.assertIn("bring it to the front", worker)
 
+    def test_a_change_is_never_shown_by_opening_a_window(self):
+        """Asked 2026-09-11: workers opened a new Chrome window after every
+        change, and one landed in the user's screen recording. Pages the
+        user has open reload themselves, so the Boss and every worker are
+        told to open nothing the user did not ask to see."""
+        from pathlib import Path
+        from conductor.conductor import SHARED_MACHINE_RULE
+        self.assertIn("Open nothing they did not ask to see", SHARED_MACHINE_RULE)
+        self.assertIn("reload themselves", SHARED_MACHINE_RULE)
+        self.assertIn("without opening anything visible", SHARED_MACHINE_RULE)
+        manager = Path("prompts/manager.md").read_text()
+        section = manager.partition("## Opening things for the user")[2] \
+            .partition("\n## ")[0]
+        self.assertIn("never shown by opening", section)
+        self.assertIn("reload themselves", section)
+        worker = Path("prompts/claude_worker.md").read_text()
+        self.assertIn("Open nothing they did not ask", worker)
+
 
 class TheFrontendDoesNotInventProductBehaviour(unittest.TestCase):
     def test_the_prompt_says_not_to_answer_questions_about_itself(self):
@@ -280,7 +298,7 @@ class TheUserHearsOneAssistant(unittest.TestCase):
         self.assertIn("I don't have web access", prompt)
         self.assertNotIn("say so\nplainly", prompt)
         self.assertNotIn("start coding agents in them", prompt)
-        self.assertIn("# Manager (manager-v25)",
+        self.assertIn("# Manager (manager-v26)",
                       Path("prompts/manager.md").read_text())
 
     def test_having_no_web_tools_is_not_something_to_say(self):
