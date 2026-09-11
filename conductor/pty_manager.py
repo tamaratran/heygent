@@ -86,6 +86,10 @@ MCP_CONNECT_TIMEOUT_S = 90.0
 # helper, as a child of the session; "http" points the session at the
 # conductor's own loopback endpoint (conductor_mcp) and starts nothing.
 TRANSPORTS = ("stdio", "http")
+# Which CLI the Boss is. Claude Code, or Codex (codex_boss.py says what
+# differs); the hosting, the tools, the timeline and the voice are the
+# same either way.
+CLIS = ("claude-code", "codex")
 
 
 class BossUnavailable(RuntimeError):
@@ -133,6 +137,7 @@ class _VoiceTurn:
 
 class PtyManagerBackend(ManagerBackend):
     _push_failures = 0          # class default: a backend built without __init__ (tests)
+    cli = "claude-code"         # likewise
 
     def __init__(self, runtime, home: str | Path, bridge_socket: str | Path,
                  python: str, repo_root: str | Path,
@@ -142,10 +147,14 @@ class PtyManagerBackend(ManagerBackend):
                  helper: str | Path | None = None,
                  connect_timeout: float = MCP_CONNECT_TIMEOUT_S,
                  transport: str = "stdio",
-                 session_settings: dict | None = None) -> None:
+                 session_settings: dict | None = None,
+                 cli: str = "claude-code") -> None:
         if transport not in TRANSPORTS:
             raise ValueError(f"transport must be one of {TRANSPORTS}")
+        if cli not in CLIS:
+            raise ValueError(f"cli must be one of {CLIS}")
         self.transport = transport
+        self.cli = cli
         # Claude Code settings for THIS session only (--settings <json>):
         # never written to the user's settings files. Measured use: a
         # Boss that should receive workers' cross-session replies needs
@@ -153,6 +162,10 @@ class PtyManagerBackend(ManagerBackend):
         # bypasses permission prompts holds peer messages otherwise.
         self.session_settings = {**BOSS_SETTINGS, **(session_settings or {})}
         self.effort: str | None = BOSS_EFFORT
+        if cli == "codex":
+            # Claude Code's model alias and settings mean nothing to
+            # Codex: it runs the user's default model, at codex_boss.EFFORT.
+            model, self.session_settings, self.effort = None, {}, None
         # Diagnostics only: Claude Code's own debug log for the Boss
         # process (--debug-file), when someone wants to see the MCP
         # client's side of a connection. Off by default.
@@ -348,7 +361,8 @@ class PtyManagerBackend(ManagerBackend):
             # old 800 KB conversation into it. The Boss woke up with all
             # its old context and, asked "what's up", re-created a task
             # the user had just cancelled.
-            if not self.store.list():
+            # A Claude Code id, so only a Claude Code Boss can inherit it.
+            if not self.store.list() and self.cli == "claude-code":
                 stored = (conductor.projects.manager().get("session_id")
                           if hasattr(conductor, "projects") else None)
                 session.provider_session_id = stored
@@ -396,7 +410,9 @@ class PtyManagerBackend(ManagerBackend):
                 application_log("manager", "boss.capabilities_unavailable",
                                 "could not snapshot capabilities for the Boss",
                                 severity="warning", exc_info=True)
-        (self.boss_dir / "CLAUDE.md").write_text("\n\n".join(parts) + "\n")
+        # Where each CLI reads standing instructions from, natively.
+        name = "AGENTS.md" if self.cli == "codex" else "CLAUDE.md"
+        (self.boss_dir / name).write_text("\n\n".join(parts) + "\n")
 
     def _resolve_helper(self) -> Path:
         """The packaged boss-mcp, verified. Refuses rather than guesses."""
@@ -413,6 +429,12 @@ class PtyManagerBackend(ManagerBackend):
         """Session-scoped: this file is named on THIS session's command
         line and nowhere else. The user's other Claude Code sessions never
         see the boss tools, and never see this file."""
+        if self.cli == "codex":
+            # No config file: a launcher Codex is told to run, holding
+            # the credential the way mcp.json does (codex_boss.py).
+            from .codex_boss import write_launcher
+            return write_launcher(self.boss_dir, helper, self.bridge_socket,
+                                  names, boss_id, credential)
         path = self.boss_dir / "mcp.json"
         if self.transport == "http":
             # The conductor's own endpoint; the credential rides in the
@@ -464,6 +486,12 @@ class PtyManagerBackend(ManagerBackend):
         if self._bridge is None:
             raise BossUnavailable("Boss orchestration tooling is unavailable: "
                                   "no bridge to the Conductor")
+        if self.transport == "http" and self.cli == "codex":
+            # Codex would need the bearer token in its environment or on
+            # its command line; the launcher keeps it off both.
+            raise BossUnavailable("Boss orchestration tooling is unavailable: "
+                                  "the Codex Boss reaches its tools over "
+                                  "stdio; start with --boss-transport stdio")
         if self.transport == "http":
             helper = None
             if not getattr(self._bridge, "port", None):
@@ -483,6 +511,9 @@ class PtyManagerBackend(ManagerBackend):
         # a new conversation resumed the old one.
         stored = record.provider_session_id
         existing = None
+        if self.cli == "codex":
+            return await self._open_codex(conductor, record, stored,
+                                          mcp_config)
         if stored:
             # Resuming: the session's file already exists, and discovery
             # must land on it, not skip it as "already there". But Claude
@@ -522,6 +553,55 @@ class PtyManagerBackend(ManagerBackend):
             conductor.projects.set_manager("anthropic", self.session_id)
         self._unsubscribe = await self.runtime.subscribe(self.session_id,
                                                           self._on_event)
+        return await self._await_tools(conductor, record, stored)
+
+    async def _open_codex(self, conductor, record: BossSession,
+                          stored: str | None, launcher: Path) -> str:
+        """Step 3 for a Codex Boss. Resumed by id when this directory has
+        its rollout; otherwise started fresh and adopted at its prompt,
+        its id read off the rollout its first message creates."""
+        from . import codex_boss
+        if stored and not await asyncio.to_thread(
+                codex_boss.resumable, self.runtime.adapter, self.boss_dir,
+                stored):
+            self.record("system_event", {
+                "text": f"previous Boss session {stored[:8]} is not a Codex "
+                        f"session in {self.boss_dir}; starting a new session "
+                        "in this window"})
+            stored = None
+        argv = await asyncio.to_thread(codex_boss.launch_argv,
+                                       self.runtime.adapter.binary,
+                                       launcher, stored)
+        self._set_status("recovering" if stored else "starting")
+        self.session_id = await self.runtime.launch_session(
+            BOSS_TASK_ID, str(self.boss_dir), argv, session_id=stored,
+            focus=False, adopt_at_prompt=stored is None)
+        self._note_provider_id()
+        self._unsubscribe = await self.runtime.subscribe(self.session_id,
+                                                          self._on_event)
+        return await self._await_tools(conductor, record, stored)
+
+    def _note_provider_id(self) -> None:
+        """What a restart resumes, saved the moment the CLI has one: at
+        launch for Claude Code (its id is ours to pin), at the first
+        message for Codex (its id is only on the rollout that creates)."""
+        record, handle = self.session, self.session_id
+        if record is None or not handle:
+            return
+        lookup = getattr(self.runtime, "provider_session_id", None)
+        provider_id = lookup(handle) if callable(lookup) else handle
+        if not isinstance(provider_id, str) or not provider_id or \
+                record.provider_session_id == provider_id:
+            return
+        record.provider_session_id = provider_id
+        self.store.save(record)
+        if self.cli == "codex":
+            self.record("system_event", {
+                "text": f"Codex session id {provider_id[:8]} recorded; a "
+                        "restart resumes it"})
+
+    async def _await_tools(self, conductor, record: BossSession,
+                           stored: str | None) -> str:
         # 4. boss-mcp said hello, with the required tools
         connected = await self._bridge.wait_connected(self.connect_timeout)
         if connected is None:
@@ -539,9 +619,13 @@ class PtyManagerBackend(ManagerBackend):
                                   f"required tools missing: {missing}")
         # 5. ready
         self._set_status("ready")
+        shown = record.provider_session_id if self.cli == "codex" else \
+            self.session_id
         self.record("system_event", {
             "text": ("Boss session resumed" if stored else "Boss session opened")
-                    + f" ({self.session_id[:8]}); {len(connected['tools'])} tools"})
+                    + f" ({(shown or 'id on its first message')[:24]}); "
+                    + f"{len(connected['tools'])} tools"
+                    + (" · Codex" if self.cli == "codex" else "")})
         conductor.bus.emit(ObservabilityEvent(
             type="boss.session_opened", component="manager",
             manager_session_id=self.session_id,
@@ -610,8 +694,12 @@ class PtyManagerBackend(ManagerBackend):
 
     def _process_running(self) -> bool:
         """Is there a claude running THIS Boss? Its argv names our MCP
-        config, which nothing else on the machine does."""
+        config, which nothing else on the machine does. (A Codex Boss's
+        names its boss-mcp launcher.)"""
         needle = str(self.boss_dir / "mcp.json")
+        if self.cli == "codex":
+            from .codex_boss import LAUNCHER
+            needle = str(self.boss_dir / LAUNCHER)
         try:
             found = subprocess.run(["pgrep", "-f", needle],
                                    capture_output=True, text=True, timeout=5)
@@ -625,6 +713,8 @@ class PtyManagerBackend(ManagerBackend):
         user typed into the window arrives here too - as the same kind of
         event, into the same timeline."""
         self._last_event_at = time.monotonic()
+        if self.cli == "codex":
+            self._note_provider_id()     # known from its first message on
         if event.type == "progress":
             source = (event.detail or {}).get("source", "")
             if source == "user_message":

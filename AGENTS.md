@@ -103,6 +103,14 @@ Reading the result:
   answer, and the timeline says "the Boss never read: ...". Which
   utterance a reply answers is matched by the words of the user line,
   never by order.
+- A Codex Boss (`--boss-cli codex`, conductor/codex_boss.py) has no
+  session id until its first message: `runtime.session_discovered`
+  (with `handle: pending_...`) is its rollout being found, and the
+  timeline's "Codex session id ... recorded" is what a restart resumes.
+  A Boss turn that times out with no `session_discovered` before it
+  means the rollout was never found. `boss.codex_servers_unknown` means
+  `codex mcp list` did not answer, so the user's own MCP servers were
+  left on for that Boss.
 - `boss.note_for_voice` is the Boss telling the voice something on the side
   (ids, files, numbers); `voice.commentary_sent` is it reaching the voice
   model on the commentary channel. Neither is ever spoken or shown. A note

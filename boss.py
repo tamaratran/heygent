@@ -59,6 +59,16 @@ PROVIDER_BYPASS_FLAGS = {
     "droid": ["--settings", "<autonomy high overlay>"],
 }
 
+# --- which CLI the Boss is -----------------------------------------------
+# "claude-code"  the Boss is a Claude Code session (the default)
+# "codex"        the Boss is a Codex CLI session: the same window, tools,
+#                timeline and voice, on the user's own Codex model. Its
+#                user MCP servers, plugins, shell and sub-agents are
+#                switched off for that session (conductor/codex_boss.py).
+# --boss-cli overrides this for one run. A conversation started on one
+# CLI continues on that CLI only; switching starts a new Boss session.
+BOSS_CLI = "claude-code"
+
 # --- how answers reach the user -----------------------------------------
 # "speak" - said aloud only, no card
 # "text"  - card only, silent

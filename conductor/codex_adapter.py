@@ -143,6 +143,13 @@ class CodexAdapter(CliAdapter):
             return "trust"
         if "hooks need review" in low:
             return "hooks"
+        # Measured 2026-09-11 on 0.151.0, before the trust dialog:
+        #   ✨ Update available! 0.151.0 -> 0.154.0
+        #   › 1. Update now (runs `npm install -g @openai/codex`)
+        #     2. Skip
+        #     3. Skip until next version
+        if "update available" in low and "skip" in low:
+            return "update"
         if "sign in" in low and ("chatgpt" in low or "api key" in low):
             return "auth"
         return None
@@ -242,7 +249,19 @@ class CodexAdapter(CliAdapter):
                                              detail={"source": "user_message"}))
                 elif payload.get("role") == "assistant":
                     state.setdefault("turn_text", []).append(text)
-                    events.append(AgentEvent(type="progress", summary=text[:300]))
+                    # The whole message too, as Claude Code's reader gives
+                    # it: the Boss's window draws each one as it is
+                    # written, and a 300-character summary drawn there
+                    # was an answer cut mid-sentence. Paragraph breaks
+                    # are kept for it; the summary is one line.
+                    whole = "\n\n".join(
+                        block.get("text", "").strip()
+                        for block in (payload.get("content") or [])
+                        if isinstance(block, dict)
+                        and block.get("type") == "output_text"
+                        and block.get("text", "").strip())
+                    events.append(AgentEvent(type="progress", summary=text[:300],
+                                             text=(whole or text)[:SUMMARY_CEILING]))
             elif ptype in ("function_call", "custom_tool_call", "local_shell_call",
                            "web_search_call"):
                 name = payload.get("name") or ptype

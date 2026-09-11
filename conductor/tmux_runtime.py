@@ -296,6 +296,9 @@ _PLACEHOLDERS = ClaudeCodeAdapter.PLACEHOLDERS
 # whether what is showing there was typed or merely suggested. See
 # TmuxClaudeRuntime._ghost_in_the_box.
 PROBE = "~"
+# The handle a session adopted before it had an id is known by
+# (launch_session's adopt_at_prompt). Never a CLI's own id.
+PENDING_PREFIX = "pending_"
 
 
 def session_name(task_id: str) -> str:
@@ -857,6 +860,12 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                     question=f"{self.adapter.display} needs you to sign in - "
                              "open its window"))
             return False
+        if sess.jsonl_path is None and "discover_from" in sess.state:
+            # Adopted at its prompt with no transcript yet: the first
+            # message makes one. Until then there is nothing to read.
+            await self._discover_late(sess)
+            if sess.jsonl_path is None:
+                return False
         if sess.jsonl_path is None:
             # No transcript to tail: the screen is the transcript. The
             # adapter reads turn ends and text off it (ScreenAdapter);
@@ -968,6 +977,11 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
             self._answer_choice(sess.name, pane, "without trusting")
         elif dialog == "resume_picker":
             self._tmux("send-keys", "-t", sess.name, "Enter")
+        elif dialog == "update":
+            # Codex's "Update available!": its marked option is "Update
+            # now", which runs npm install under a working session. Skip,
+            # this once; updating is the user's call.
+            self._answer_choice(sess.name, pane, "2. skip")
         elif dialog == "onboarding":
             # Claude Code's first run on a machine: the theme picker, then
             # the security notes. Enter takes the marked default on both;
@@ -1016,6 +1030,47 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         sess.status = "failed"
         sess.ready.set()
 
+    # How often a session adopted at its prompt looks for the transcript
+    # its first message creates. Listing Codex's rollouts reads the head
+    # of every one from the last two days, so not three times a second.
+    DISCOVER_EVERY_S = 1.0
+
+    async def _discover_late(self, sess: _TmuxSession) -> None:
+        """The transcript of a session adopted before it had one, if it
+        has appeared: read from its first line, because the message that
+        created it is the one being waited on."""
+        now = time.monotonic()
+        if now - sess.state.get("discover_at", 0.0) < self.DISCOVER_EVERY_S:
+            return
+        sess.state["discover_at"] = now
+        existing = sess.state.get("discover_from") or set()
+        found = await self._off_loop(self.adapter.transcripts,
+                                     sess.working_directory)
+        fresh = [p for p in found if str(p) not in existing]
+        if not fresh:
+            return
+        newest = max(fresh, key=lambda p: p.stat().st_mtime)
+        sess.jsonl_path, sess.offset = newest, 0
+        sess.state.pop("discover_from", None)
+        sess.state.pop("discover_at", None)
+        sess.state["provider_session_id"] = self.adapter.session_id_of(newest)
+        application_log("runtime", "runtime.session_discovered",
+                        f"{sess.name} wrote its first transcript; reading "
+                        f"{newest.name}", task_id=sess.task_id,
+                        provider_session_id=sess.state["provider_session_id"],
+                        handle=sess.session_id)
+
+    def provider_session_id(self, session_id: str) -> str | None:
+        """The CLI's own id for a session this runtime hosts: the handle
+        itself, unless the session was adopted before it had an id
+        (adopt_at_prompt) - then None until its transcript appears."""
+        sess = self.sessions.get(session_id)
+        if sess is None:
+            return None
+        if "provider_session_id" in sess.state:
+            return sess.state["provider_session_id"]
+        return None if "discover_from" in sess.state else session_id
+
     # -- CodingAgentRuntime -------------------------------------------------
     async def create_session(self, task_id: str, working_directory: str,
                              initial_prompt: str) -> str:
@@ -1055,7 +1110,8 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                              argv: list[str],
                              existing: set | None = None,
                              session_id: str | None = None,
-                             focus: bool = True) -> str:
+                             focus: bool = True,
+                             adopt_at_prompt: bool = False) -> str:
         """Start a claude process with this exact command line and
         supervise it.
 
@@ -1082,6 +1138,14 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
         waiting for ever - measured: the Boss sat at its prompt, wrote
         nothing, and was killed as "did not start". Known-id sessions are
         adopted at their prompt instead.
+
+        adopt_at_prompt: for a CLI that cannot be given an id and writes
+        no transcript until it is spoken to (Codex: no --session-id, and
+        no rollout until the first message). The session is adopted at
+        its prompt under a handle of ours, and its transcript - with the
+        CLI's own id - is found once it appears (provider_session_id).
+        Without it such a session would wait for a file that only the
+        first message creates, and be killed as "did not start".
         """
         name = session_name(task_id)
         # A fresh task's name should be free. That it is not means a
@@ -1131,11 +1195,15 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
                             f"{name}: {result.stderr.strip()}; judging by "
                             f"the session's transcript", severity="warning",
                             task_id=task_id)
+        discover = None
+        if session_id is None and adopt_at_prompt:
+            session_id, discover = PENDING_PREFIX + secrets.token_hex(6), existing
         if session_id is None:
             return await self.adopt_session(task_id, name, working_directory,
                                             existing)
         sid = await self._adopt_known(task_id, name, working_directory,
-                                      session_id, project_dir)
+                                      session_id, project_dir,
+                                      discover=discover)
         if unconfirmed and not self.adapter.prompt_ready(await self._pane(name)):
             sess = self.sessions.pop(sid, None)
             if sess is not None and sess.watcher:
@@ -1151,17 +1219,27 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
 
     async def _adopt_known(self, task_id: str, name: str,
                            working_directory: str, session_id: str,
-                           project_dir: Path) -> str:
+                           project_dir: Path,
+                           discover: set | None = None) -> str:
         """Supervise a session whose id is already known: wait for its
         prompt, watch the transcript it will write, and read on from the
-        end of one it already wrote."""
-        path = project_dir / f"{session_id}.jsonl" \
-            if project_dir is not None else None
+        end of one it already wrote.
+
+        discover: the id is only our handle, and the transcript is
+        whichever appears in this directory that is not one of these
+        (launch_session's adopt_at_prompt)."""
+        # The adapter's answer, not <dir>/<id>.jsonl: Claude Code's is
+        # that, and Codex files its rollouts by date under one root.
+        path = None
+        if project_dir is not None and discover is None:
+            path = self.adapter.transcript_for(working_directory, session_id)
         sess = _TmuxSession(task_id=task_id, name=name,
                             working_directory=working_directory,
                             session_id=session_id, jsonl_path=path,
                             offset=path.stat().st_size
                             if path is not None and path.exists() else 0)
+        if discover is not None and project_dir is not None:
+            sess.state["discover_from"] = set(discover)
         self.sessions[session_id] = sess
         await self._wait_resumed(sess)
         if not self._alive(name):
