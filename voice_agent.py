@@ -74,6 +74,7 @@ import numpy as np
 import sounddevice as sd
 
 import boss
+from hotkey import KEY_LABELS, chosen_key
 from conductor.manager import VERBATIM_FOOTER, VERBATIM_HEADER
 from conductor.observability import (JsonlSink, LoggingSink,
                                      ObservabilityBus, ObservabilityEvent,
@@ -1787,9 +1788,9 @@ async def main() -> int:
             agent.holding = True
             await session_task
         else:
-            print("hold Fn and talk, release to get an answer, "
-                  "double-tap Fn for notifications, ctrl-c to quit",
-                  flush=True)
+            print(f"hold {KEY_LABELS[chosen_key()]} and talk, "
+                  "release to get an answer, double-tap Fn for "
+                  "notifications, ctrl-c to quit", flush=True)
             await hotkey.wait_with(session_task)
     except (KeyboardInterrupt, asyncio.CancelledError):
         application_log("voice", "app.interrupted",
