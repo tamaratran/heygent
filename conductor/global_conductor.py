@@ -1454,6 +1454,23 @@ class GlobalConductor:
             tasks.extend(self._conductor(project.id).list_tasks())
         return tasks
 
+    def _placed_elsewhere(self, session_id: str) -> bool:
+        """Whether a session may be running somewhere other than here.
+
+        A runtime that routes is believed, and only "cloud" is elsewhere.
+        One that does not route, or a lookup that fails, has no opinion, and
+        the answer is yes: the rule from before routing, which goes on to
+        ask the runtime's capabilities. focus_task decides the same way.
+        """
+        locate = getattr(self.runtime, "location_of", None)
+        if not callable(locate) or not session_id:
+            return True
+        try:
+            answer = locate(session_id)
+        except Exception:
+            return True
+        return answer == "cloud" if isinstance(answer, str) else True
+
     async def inspect_task(self, task_id: str) -> dict:
         conductor, task = self._find_task(task_id)
         self._touch(task.project_id, task.id)
@@ -1466,11 +1483,26 @@ class GlobalConductor:
                 task.provider_session_id)
             # A cloud worker reports nothing on its own, so "what is it
             # doing?" is the moment to go and look. Expensive - a process
-            # and several seconds - which is why it happens here, when
+            # and up to a minute - which is why it happens here, when
             # somebody asked, and never on a timer.
+            #
+            # Only a worker the router places in the cloud is looked at, the
+            # rule focus_task already follows. Asking which capabilities the
+            # runtime offers sent every session the routing map had never
+            # heard of - every worker after a restart, since that map lives
+            # in memory - to the first runtime with is_readable: the cloud
+            # one, which answered "not readable" for a local worker, and
+            # peek then spent its whole 60 s timeout on `claude --teleport`.
+            # Measured 2026-09-10/11: 51 inspect_task calls on workers from
+            # before a restart took a median 61.0 s, and every utterance
+            # typed into the Boss meanwhile waited behind them (median 45 s).
+            # A cloud worker from before a restart is not looked at either:
+            # nothing records that it was one, and a minute of teleport is
+            # too much to spend on a guess.
             peek = getattr(self.runtime, "peek", None)
             readable = getattr(self.runtime, "is_readable", None)
-            if peek is not None and readable is not None and \
+            if self._placed_elsewhere(task.provider_session_id) \
+                    and peek is not None and readable is not None and \
                     not readable(task.provider_session_id):
                 try:
                     # The router answers None for a session whose runtime
