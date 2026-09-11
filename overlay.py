@@ -111,7 +111,7 @@ CARD_PAD = 17.0
 CARD_RADIUS = 21.0
 CARD_MAX_H = 360.0
 CARD_LINE = 22.0
-CARD_COLLAPSED_LINES = 2
+CARD_COLLAPSED_LINES = 1   # the panel's cards show one body line; so does this
 # The window is larger than the card so the dismiss button can overhang the
 # corner and the chevron can hang below, the way Codex's notification does.
 CAPTION_PAD = 12.0
@@ -522,11 +522,11 @@ class CardView(NSView):
                         }))
             line.drawAtPoint_(NSMakePoint(text_x, CARD_INSET + CARD_PAD))
         else:
+            # The session cards' title face, so the reply reads as part of
+            # the same family - its tint already sets it apart.
             NSAttributedString.alloc().initWithString_attributes_(
-                clip_title(self.title), {
-                    NSFontAttributeName: NSFont.systemFontOfSize_weight_(15.0, 0.60),
-                    NSForegroundColorAttributeName: rgb(17, 19, 23, 1.0),
-                }).drawAtPoint_(NSMakePoint(text_x, CARD_INSET + CARD_PAD - 2))
+                clip_title(self.title), panel_title_attrs()
+                ).drawAtPoint_(NSMakePoint(text_x, CARD_INSET + CARD_PAD - 2))
 
         # A spinner while the agent is still speaking, and nothing once it
         # has. No green tick: that is a session's completion mark, and
@@ -1163,6 +1163,13 @@ class Controller(NSObject):
         # than by whoever is driving: the card knows it is done, so it can
         # retire without the driver having to remember to say so.
         self.card_expires_at = 0.0
+        # The reply card's rendered baseline, with the same contract as the
+        # panel's: it rises at once when the caption below needs the room,
+        # but it never falls at once - the caption clears between every
+        # utterance, and dropping the card each time bounced it against the
+        # capsule. It holds for PANEL_SETTLE, then glides down in tick_.
+        self.card_base = 0.0
+        self.card_settle_at = 0.0
         self.card_window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, WINDOW_W, 140), NSWindowStyleMaskBorderless,
             NSBackingStoreBuffered, False)
@@ -1386,13 +1393,15 @@ class Controller(NSObject):
             # Sit PANEL_GAP above the voice card's visible top edge - not
             # above its window, whose height includes the inset margin and
             # the chevron hanging below. Stacking window heights left a gap
-            # of roughly forty points of empty air.
+            # of roughly forty points of empty air. The card's own baseline
+            # may be held above its natural spot while it settles, so the
+            # panel stacks on where the card actually is, not where it will
+            # eventually rest.
             card_top = self.card_view.card_height() + CARD_CHEVRON
-            # The reply card's x overhangs its own top edge by half the
-            # button, so the gap has to clear that too or the button lands
-            # on the card above it.
-            base += (card_top + PANEL_GAP + CLOSE_D / 2
-                     - PANEL_PILL_H / 2 - PANEL_EDGE / 2)
+            # PANEL_GAP exactly, the same spacing the panel keeps between
+            # its own cards - whose x buttons overhang into that gap too.
+            base = self.card_base + (card_top + PANEL_GAP
+                                     - PANEL_PILL_H / 2 - PANEL_EDGE / 2)
         return base
 
     def _place_panel(self, height: float) -> None:
@@ -1528,19 +1537,33 @@ class Controller(NSObject):
     def layout_card(self) -> None:
         """Stack the card directly above the capsule, both centred at the
         bottom of the screen, with the chevron sitting between them."""
+        target = self.card_target()
+        if not self.card_visible or target >= self.card_base:
+            # Rising (or first show): the caption below needs the room now.
+            self.card_base = target
+            self.card_settle_at = 0.0
+        elif not self.card_settle_at:
+            # Shrinking: hold this height and let tick_ settle it later.
+            self.card_settle_at = time.monotonic() + PANEL_SETTLE
         height = CARD_INSET + self.card_view.card_height() + CARD_CHEVRON
-        screen = NSScreen.mainScreen().frame()
-        dx, dy = self.stack_offset
-        x = (screen.size.width - WINDOW_W) / 2 + dx
-        stack = BOTTOM_MARGIN + H + CAPTION_GAP
-        if self.caption_visible:
-            stack += self.caption_height + CAPTION_GAP
-        y = stack + dy
-        self.card_window.setFrame_display_(
-            NSMakeRect(x, y, WINDOW_W, height), True)
+        self._place_card(height)
         self.card_view.setFrame_(NSMakeRect(0, 0, WINDOW_W, height))
         self.card_view.setNeedsDisplay_(True)
         self.render_panel()          # the panel rides above this stack
+
+    def card_target(self) -> float:
+        """The y the reply card needs to clear the capsule and the caption."""
+        base = BOTTOM_MARGIN + H + CAPTION_GAP
+        if self.caption_visible:
+            base += self.caption_height + CAPTION_GAP
+        return base
+
+    def _place_card(self, height: float) -> None:
+        screen = NSScreen.mainScreen().frame()
+        dx, dy = self.stack_offset
+        self.card_window.setFrame_display_(
+            NSMakeRect((screen.size.width - WINDOW_W) / 2 + dx,
+                       self.card_base + dy, WINDOW_W, height), True)
 
     def show_card(self, card: dict) -> None:
         # A card marked fresh belongs to a new answer, so it overrides an
@@ -1596,11 +1619,11 @@ class Controller(NSObject):
         screen = NSScreen.mainScreen().frame()
         frame = self.card_window.frame()
         default_x = (screen.size.width - WINDOW_W) / 2
-        default_y = BOTTOM_MARGIN + H + CAPTION_GAP
-        if self.caption_visible:
-            default_y += self.caption_height + CAPTION_GAP
+        # The card sits at its baseline, which may be held above its natural
+        # spot mid-settle; measuring against the natural spot instead folded
+        # the remaining hold into the offset on every drag.
         self.stack_offset = (frame.origin.x - default_x,
-                             frame.origin.y - default_y)
+                             frame.origin.y - self.card_base)
         self._resize()
         self.render_panel()
 
@@ -1615,6 +1638,8 @@ class Controller(NSObject):
         self.card_dismissed = True
         self.card_window.orderOut_(None)
         self.card_visible = False
+        self.card_base = 0.0
+        self.card_settle_at = 0.0
         self.render_panel()          # the panel settles back down
 
     def toggle_card(self) -> None:
@@ -1895,6 +1920,8 @@ class Controller(NSObject):
             self.card_expires_at = 0.0
             self.card_window.orderOut_(None)
             self.card_visible = False
+            self.card_base = 0.0
+            self.card_settle_at = 0.0
             self.render_panel()
         # Spinners turn for a screen that is showing them. Hidden, the
         # windows are still tracked and still laid out - they are just not
@@ -1907,6 +1934,27 @@ class Controller(NSObject):
                 c.get("status") != "done" for c in self.panel_view.cards):
             self.panel_view.spin = (self.panel_view.spin - 6.0) % 360.0
             self.panel_view.setNeedsDisplay_(True)
+        if self.card_visible:
+            target = self.card_target()
+            if self.card_base <= target:
+                self.card_settle_at = 0.0
+            elif (self.card_settle_at
+                    and time.monotonic() > self.card_settle_at):
+                # The hold expired with nothing new below: glide down.
+                self.card_base += (target - self.card_base) * PANEL_EASE
+                if self.card_base - target < 0.5:
+                    self.card_base = target
+                    self.card_settle_at = 0.0
+                self._place_card(CARD_INSET + self.card_view.card_height()
+                                 + CARD_CHEVRON)
+                if self.panel_visible:
+                    # The panel rides the card down as one object; giving it
+                    # its own hold here would leave it hanging in the air
+                    # for another settle after the card had already landed.
+                    self.panel_base = self.stack_base()
+                    self.panel_settle_at = 0.0
+                    self._place_panel(self.panel_view.panel_height())
+                self.render_chevron()
         if self.panel_visible:
             target = self.stack_base()
             if self.panel_base <= target:
