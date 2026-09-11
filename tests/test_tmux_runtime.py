@@ -142,6 +142,56 @@ class SendKeysTest(unittest.TestCase):
         self.assertEqual(argv[1][-1], "Enter")
 
 
+class TextThatStartsWithADash(unittest.TestCase):
+    """tmux took `send-keys -l -- hi` for flags and typed nothing: 440
+    worker updates never reached the Boss (2026-09-11)."""
+
+    def test_the_text_goes_after_a_double_dash(self) -> None:
+        from conductor.tmux_runtime import tmux_args
+        self.assertEqual(tmux_args(("send-keys", "-t", "p", "-l", "-- hi")),
+                         ["send-keys", "-t", "p", "-l", "--", "-- hi"])
+        self.assertEqual(tmux_args(("send-keys", "-t", "p", "-l", "--")),
+                         ["send-keys", "-t", "p", "-l", "--", "--"])
+
+    def test_already_marked_keys_and_other_verbs_are_left_alone(self) -> None:
+        from conductor.tmux_runtime import tmux_args
+        for args in (["send-keys", "-t", "p", "-l", "--", "-x"],
+                     ["send-keys", "-t", "p", "Enter"],
+                     ["send-keys", "-t", "p", "C-u"],
+                     ["capture-pane", "-p", "-t", "p", "-S", "-60"],
+                     ["has-session", "-t", "p"]):
+            self.assertEqual(tmux_args(tuple(args)), args)
+
+    def test_both_real_seams_add_it(self) -> None:
+        from unittest import mock
+        from conductor.cloud_runtime import CloudClaudeRuntime
+        for seam in (TmuxClaudeRuntime._tmux, CloudClaudeRuntime._tmux):
+            with mock.patch("subprocess.run") as run:
+                seam("send-keys", "-t", "p", "-l", "- item")
+            self.assertEqual(run.call_args.args[0],
+                             ["tmux", "send-keys", "-t", "p", "-l", "--",
+                              "- item"])
+
+    @unittest.skipUnless(_tmux_available(), "tmux not installed")
+    def test_a_real_tmux_types_it(self) -> None:
+        import subprocess
+        import uuid
+        from conductor.tmux_runtime import tmux_args
+        server = ["tmux", "-L", f"vc_test_{uuid.uuid4().hex[:8]}"]
+        run = lambda *a: subprocess.run([*server, *a], capture_output=True,
+                                        text=True)
+        self.assertEqual(run("new-session", "-d", "-s", "p",
+                             "-x", "80", "-y", "5", "cat").returncode, 0)
+        try:
+            for text in ("-- worker update", "- item"):
+                done = run(*tmux_args(("send-keys", "-t", "p", "-l", text)))
+                self.assertEqual(done.returncode, 0, done.stderr)
+            screen = run("capture-pane", "-p", "-t", "p").stdout
+            self.assertIn("-- worker update- item", screen)
+        finally:
+            run("kill-server")
+
+
 class InteractiveSurfaceTest(unittest.TestCase):
     def test_attach_command_joins_never_forks(self) -> None:
         surface = InteractiveTerminalSurface()

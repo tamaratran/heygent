@@ -51,6 +51,26 @@ from .observability import (ObservabilityBus, ObservabilityEvent,
 from .runtime import (ApprovalPolicy, CodingAgentRuntime, EventHandler,
                       ExecutionTranscript, TaskExecution)
 
+def tmux_args(args) -> list[str]:
+    """args as real tmux must be given them: typed text after `--`.
+
+    tmux reads `send-keys -l <text>` text that starts with a dash as more
+    flags and types nothing ("command send-keys: invalid flag --"). A long
+    message is typed in pieces that can start anywhere, so any of them can
+    begin with one. Measured 2026-09-11 on the e406314 build: 440 worker
+    updates in a row never reached the Boss this way, each kept and
+    retried into the same refusal. Callers keep writing `-l <text>`; the
+    marker goes in here, where tmux is actually run, and nowhere a
+    runtime that only translates the argv (cmux) would have to skip it."""
+    args = list(args)
+    if args[:1] == ["send-keys"] and "-l" in args:
+        at = args.index("-l") + 1
+        # `-l -- <text>` is already marked; a lone `--` is the text itself.
+        if at < len(args) and not (args[at] == "--" and at + 1 < len(args)):
+            args.insert(at, "--")
+    return args
+
+
 # What a worker must NOT inherit, whoever hosts its PTY.
 #
 # A worker is started by whatever started the conductor, and if that was a
@@ -424,7 +444,7 @@ class TmuxClaudeRuntime(CodingAgentRuntime):
     # -- tmux helpers -------------------------------------------------------
     @staticmethod
     def _tmux(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["tmux", *args], capture_output=True,
+        return subprocess.run(["tmux", *tmux_args(args)], capture_output=True,
                               text=True)
 
     # The keyboard is not a pipe. Measured 2026-09-01 08:36:24Z: a 2,353

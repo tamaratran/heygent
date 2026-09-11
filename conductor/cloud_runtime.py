@@ -54,6 +54,7 @@ from typing import Callable
 from . import agent_feed
 from .agent_events import AgentEvent
 from .runtime import CodingAgentRuntime, EventHandler
+from .tmux_runtime import tmux_args
 
 # "Created cloud session: ..." then a View: line carrying the id.
 SESSION_ID = re.compile(r"\b(session_[A-Za-z0-9]+|cse_[A-Za-z0-9]+)\b")
@@ -126,7 +127,8 @@ class CloudClaudeRuntime(CodingAgentRuntime):
     # -- helpers ---------------------------------------------------------
     @staticmethod
     def _tmux(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["tmux", *args], capture_output=True, text=True)
+        return subprocess.run(["tmux", *tmux_args(args)], capture_output=True,
+                              text=True)
 
     async def _claude(self, *args: str) -> str:
         """Run the CLI without a TTY. Only for the paths that allow it -
