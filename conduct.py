@@ -114,6 +114,9 @@ class ConductorVoice(VoiceAgent):
                          reply_mode=reply_mode, bus=conductor.bus)
         self.conductor = conductor
         self.boss_interim = ""      # already spoken; the answer need not repeat it
+        # Wired in main(): what an answer covered, so the mechanical
+        # announcer does not say the same news a beat later.
+        self.note_spoken = None
         # The Boss window's page (CodexWeb), when one is open: spoken
         # turns are drawn there too, as they happen.
         self.mirror = None
@@ -158,6 +161,7 @@ class ConductorVoice(VoiceAgent):
                   flush=True)
         self._mirror_prompt(prompt)
         shown = None
+        subjects: set[str] = set()
         work = asyncio.ensure_future(self.conductor.handle_user_message(
             prompt, source="voice", trace_id=turn_trace, utterance=spoken))
         try:
@@ -170,6 +174,12 @@ class ConductorVoice(VoiceAgent):
                 gist = json.dumps(call.args)[:70]
                 print(f"     ⚒ {call.tool}({gist})", flush=True)
                 log("manager_tool", tool=call.tool, args=call.args)
+                # Which tasks this answer is about. The subject is the
+                # reliable half of the de-dupe below; word overlap is a
+                # backstop, and a weak one.
+                about = call.args.get("task_id") if isinstance(call.args, dict) else None
+                if about:
+                    subjects.add(str(about))
             if turn.folded:
                 # Answered together with what the user said before it,
                 # on that item. An empty answer closes this one without
@@ -212,12 +222,50 @@ class ConductorVoice(VoiceAgent):
                             "Manager turn failed", severity="error",
                             exc_info=True, trace_id=turn_trace,
                             prompt=prompt[:300])
+        # One string for both surfaces. The Boss answers in Markdown and
+        # neither surface renders it: the window draws a plain string and
+        # the voice reads the characters it is given. Every other spoken
+        # path already strips it here (boss_interim, boss_speaks); this
+        # one, the path the user hears most, did not - so "**Merged.**"
+        # went to the screen with the asterisks and to the voice as
+        # something to pronounce. Stripped once, above both, so the
+        # sentence on screen and the sentence in the ear are the same
+        # sentence.
+        answer = plain_text(answer)
+        if shown is not None:
+            shown = plain_text(shown)
         self._mirror_answer(shown if shown is not None else answer)
         answer = answer[:voice_agent.ANSWER_CHAR_LIMIT]
+        self._answer_covered(answer, subjects)
         print(f"  ← manager: {answer or '(answered with the earlier words)'}",
               flush=True)
         log("manager_answer", text=answer)
         return answer
+
+    def _answer_covered(self, answer: str, subjects: set[str]) -> None:
+        """Tell the announcer what this answer already covered.
+
+        The Boss and the mechanical announcer speak about the same tasks,
+        and the coordinator already knows not to repeat the conversation:
+        `covered_subjects()` is read before every batch of announcements
+        (`speak_pending`). Nothing in production ever called
+        `note_spoken_elsewhere`, so that set was always empty and both
+        de-dupe nets - subject and word overlap - were dead code. A finish
+        the Boss had just described was announced again a beat later, in
+        different words, which reads as two different pieces of news.
+
+        Called before the answer is spoken rather than after, so the gap
+        between deciding to say it and saying it is covered too.
+        """
+        note = self.note_spoken
+        if note is None:
+            return
+        try:
+            note(answer, subjects)
+        except Exception:
+            application_log("voice", "voice.covered_note_failed",
+                            "could not record what the answer covered",
+                            severity="warning", exc_info=True)
 
     def _mirror_prompt(self, prompt: str) -> None:
         if self.mirror is None:
@@ -255,8 +303,10 @@ class ConductorVoice(VoiceAgent):
             return
         if turn.folded:
             return                  # answered on the earlier item
-        self._mirror_answer(turn.reply or "Done.")
-        answer = (turn.reply or "Done.")[:voice_agent.ANSWER_CHAR_LIMIT]
+        # Plain on both surfaces, for the same reason as the live path.
+        late = plain_text(turn.reply or "Done.")
+        self._mirror_answer(late)
+        answer = late[:voice_agent.ANSWER_CHAR_LIMIT]
         print(f"  ← manager (late): {answer}", flush=True)
         log("manager_answer", text=answer, late=True)
         await self.announce(f"About \"{prompt[:80]}\": {answer}")
@@ -1261,6 +1311,13 @@ async def main() -> int:
     if hasattr(conductor.manager, "on_interim"):
         conductor.manager.on_interim = boss_interim
     conductor.bus.subscribe(notes_between_turns(agent))
+    def answer_covered(text: str, subjects) -> None:
+        """What the Boss's answer said is not news any more."""
+        if text:
+            voice.note_spoken_elsewhere(text)
+        for subject in subjects:
+            voice.note_spoken_elsewhere("", subject=subject)
+    agent.note_spoken = answer_covered
     # Close the loop: the coordinator's one speech path is this session.
     voice.set_speaker(agent.announce)
     session_task = asyncio.create_task(agent.run())
