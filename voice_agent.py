@@ -1795,6 +1795,7 @@ class HotkeyListener:
         self.proc: subprocess.Popen | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.ended = asyncio.Event()        # the hotkey process went away
+        self.refused_grant: str | None = None  # the permission macOS denied
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
@@ -1821,9 +1822,11 @@ class HotkeyListener:
                 if event.get("error"):
                     print(f"hotkey: {event['error']} - {event.get('hint', '')}",
                           file=sys.stderr, flush=True)
+                    self.refused_grant = event.get("grant") or None
                     application_log("hotkey", "hotkey.error",
                                     str(event["error"]), severity="error",
-                                    hint=event.get("hint", ""))
+                                    hint=event.get("hint", ""),
+                                    grant=self.refused_grant)
                     continue
                 if "fn" in event:
                     down = bool(event["fn"])

@@ -87,7 +87,7 @@ APP_RESTARTS = {"microphone": f"quit {OWN_APP} and open it again",
                 "accessibility": f"quit {OWN_APP} and open it again",
                 "screen_recording": f"quit {OWN_APP} and open it again"}
 # The dialog's buttons, when there is no terminal to print on.
-LATER, OPEN_SETTINGS = "Later", "Open Settings"
+LATER, OPEN_SETTINGS, QUIT = "Later", "Open Settings", "Quit"
 
 STATE_FILE = "gui-permissions.json"
 
@@ -354,6 +354,50 @@ def _dialog_message(grant: str, app: str, worker_app: str | None) -> str:
             f"the switch next to {apps}. If {app} is not in the list, "
             f"click + and choose {app} from Applications.\n\n"
             f"Then {_restart(grant, app)}.")
+
+
+def _refusal_message(grant: str, app: str, terminal: bool) -> str:
+    label = LABELS[grant]
+    lead = (f"{NEEDS[grant]} cannot work: macOS refused, because {app} "
+            f"does not have {label} {PURPOSES[grant]}.")
+    if terminal:
+        return (f"{lead} Open System Settings > Privacy & Security > "
+                f"{label}, turn it on for {app}, then "
+                f"{_restart(grant, app)}.")
+    return (f"{lead}\n\n"
+            f"In System Settings > Privacy & Security > {label}, turn on "
+            f"the switch next to {app}. If {app} is not in the list, "
+            f"click + and choose {app} from Applications.\n\n"
+            f"{OWN_APP} will quit now; open it again once it is on.")
+
+
+def explain_refusal(grant: str, *, env=None, opener=open_pane,
+                    announce=print, register=register_with_macos,
+                    dialog=None) -> Ask:
+    """macOS has just said no to `grant` (the hotkey's event tap was
+    refused): say so and offer the pane, whatever was asked before.
+
+    ask_for_missing_grants asks once and stays quiet after, which is
+    right for a grant the app can do without. This one it cannot - a
+    refused tap ends the hotkey, and the app with it - and a person who
+    clicked Later, or turned the switch on without restarting, would
+    otherwise see the app open and vanish with the reason in a log file.
+    """
+    app = this_app(env)
+    register(grant)
+    if dialog is not None:
+        message = _refusal_message(grant, app, terminal=False)
+        chosen = dialog(message, (QUIT, OPEN_SETTINGS))
+        opened = chosen == OPEN_SETTINGS and bool(opener(PANES[grant]))
+    else:
+        message = _refusal_message(grant, app, terminal=True)
+        announce(message)
+        opened = bool(opener(PANES[grant]))
+    application_log("conductor", "permissions.refused",
+                    f"macOS refused {LABELS[grant]} to {app}",
+                    severity="error", grant=grant, app=app,
+                    pane_opened=opened, dialog=dialog is not None)
+    return Ask(grant, opened, message)
 
 
 def ask_for_missing_grants(home: Path, *, worker_app: str | None = None,

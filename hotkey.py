@@ -360,10 +360,13 @@ def main() -> int:
         None,
     )
     if tap is None:
-        emit(error="event tap refused",
-             hint="Grant Input Monitoring to your terminal app in "
-                  "System Settings > Privacy & Security > Input Monitoring, "
-                  "then restart it.")
+        # macOS says no to a listen-only tap for one reason: the app this
+        # process belongs to lacks Input Monitoring. Named as the grant,
+        # so the parent can say which pane and which row, in its words.
+        emit(error="event tap refused", grant="input_monitoring",
+             hint="Input Monitoring is not granted to the app this runs "
+                  "in (System Settings > Privacy & Security > Input "
+                  "Monitoring); grant it, then start again.")
         return 1
 
     source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)

@@ -71,7 +71,8 @@ from conductor.conductor_mcp import ConductorMcp
 from conductor.boss_session import BossSessionStore, render_timeline
 from conductor.pty_manager import PtyManagerBackend
 from conductor.global_conductor import GlobalConductor
-from conductor.gui_permissions import ask_for_missing_grants
+from conductor.gui_permissions import (ask_for_missing_grants,
+                                       explain_refusal)
 from conductor.plain_text import plain_text
 from conductor.notifications import (NotificationService,
                                      TaskNotification, concise)
@@ -1344,6 +1345,13 @@ async def main() -> int:
                   "double-tap Fn for notifications, ctrl-c to quit",
                   flush=True)
             await hotkey.wait_with(session_task)
+            if hotkey.refused_grant:
+                # The tap was refused, the hotkey is gone and so, in a
+                # moment, is the app: said where the user can see it,
+                # with the pane, before that happens.
+                await asyncio.to_thread(
+                    explain_refusal, hotkey.refused_grant,
+                    dialog=None if dialogs.has_terminal() else dialogs.alert)
     except (KeyboardInterrupt, asyncio.CancelledError):
         application_log("conductor", "app.interrupted",
                         "shutting down on interrupt")
