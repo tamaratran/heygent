@@ -300,7 +300,7 @@ class ARefusalIsNotADrop(unittest.TestCase):
         forgotten = []
         with mock.patch.object(voice_agent.dialogs, "tell", told.append), \
              mock.patch.object(voice_agent, "forget_api_key",
-                               lambda: forgotten.append(1)), \
+                               lambda key="": forgotten.append(1)), \
              mock.patch.object(voice_agent, "application_log"):
             calls, _, a = run_loop([voice_agent.KEY_REFUSED] * 5,
                                    stop_after=5,
@@ -325,6 +325,9 @@ class AskingForTheKey(unittest.TestCase):
         patch.start()
         self.addCleanup(patch.stop)
         mock.patch.object(voice_agent, "application_log").start()
+        # No Keychain here: the key goes to .env, as on any other platform.
+        mock.patch.object(voice_agent.keystore, "available",
+                          return_value=False).start()
         self.addCleanup(mock.patch.stopall)
         os.environ.pop("OPENAI_API_KEY", None)
 
@@ -336,13 +339,42 @@ class AskingForTheKey(unittest.TestCase):
              mock.patch.object(voice_agent.dialogs, "can_show",
                                return_value=True), \
              mock.patch.object(voice_agent.dialogs, "ask_secret",
-                               lambda text: answers.pop(0)), \
+                               lambda text, button="": answers.pop(0)), \
              mock.patch.object(voice_agent.dialogs, "tell", told.append):
             key = voice_agent.ask_for_api_key(check=lambda k: None)
         self.assertEqual(key, "sk-good")
         self.assertIn("OPENAI_API_KEY=sk-good",
                       (Path(self.tmp.name) / ".env").read_text())
         self.assertEqual(told, [])
+
+    def test_get_a_key_opens_openai_and_asks_again(self):
+        answers = [f"button:{voice_agent.KEY_BUTTON}", "sk-good"]
+        opened = []
+        with mock.patch.object(voice_agent.dialogs, "has_terminal",
+                               return_value=False), \
+             mock.patch.object(voice_agent.dialogs, "can_show",
+                               return_value=True), \
+             mock.patch.object(voice_agent.dialogs, "ask_secret",
+                               lambda text, button="": answers.pop(0)), \
+             mock.patch.object(voice_agent.dialogs, "open_url",
+                               opened.append):
+            key = voice_agent.ask_for_api_key(check=lambda k: None)
+        self.assertEqual(key, "sk-good")
+        self.assertEqual(opened, [voice_agent.OPENAI_KEYS_URL])
+
+    def test_with_a_keychain_the_key_goes_there_not_to_env(self):
+        kept = []
+        with mock.patch.object(voice_agent.keystore, "save",
+                               lambda k: kept.append(k) or True), \
+             mock.patch.object(voice_agent.dialogs, "has_terminal",
+                               return_value=False), \
+             mock.patch.object(voice_agent.dialogs, "can_show",
+                               return_value=True), \
+             mock.patch.object(voice_agent.dialogs, "ask_secret",
+                               lambda text, button="": "sk-good"):
+            voice_agent.ask_for_api_key(check=lambda k: None)
+        self.assertEqual(kept, ["sk-good"])
+        self.assertFalse((Path(self.tmp.name) / ".env").exists())
 
     def test_a_rejected_key_is_asked_for_again(self):
         answers = ["sk-typo", "sk-good"]
@@ -354,7 +386,7 @@ class AskingForTheKey(unittest.TestCase):
              mock.patch.object(voice_agent.dialogs, "can_show",
                                return_value=True), \
              mock.patch.object(voice_agent.dialogs, "ask_secret",
-                               lambda text: answers.pop(0)), \
+                               lambda text, button="": answers.pop(0)), \
              mock.patch.object(voice_agent.dialogs, "tell", told.append):
             key = voice_agent.ask_for_api_key(check=checks.__getitem__)
         self.assertEqual(key, "sk-good")
@@ -369,7 +401,7 @@ class AskingForTheKey(unittest.TestCase):
              mock.patch.object(voice_agent.dialogs, "can_show",
                                return_value=True), \
              mock.patch.object(voice_agent.dialogs, "ask_secret",
-                               lambda text: ""):
+                               lambda text, button="": ""):
             self.assertEqual(voice_agent.ask_for_api_key(
                 check=lambda k: None), "")
         self.assertFalse((Path(self.tmp.name) / ".env").exists())
@@ -377,9 +409,69 @@ class AskingForTheKey(unittest.TestCase):
     def test_forgetting_the_key_keeps_the_rest_of_env(self):
         (Path(self.tmp.name) / ".env").write_text(
             "OTHER=1\nOPENAI_API_KEY=sk-bad\n")
-        voice_agent.forget_api_key()
+        voice_agent.forget_api_key("sk-bad")
         self.assertEqual((Path(self.tmp.name) / ".env").read_text(),
                          "OTHER=1\n")
+
+
+class FindingAKeyAlreadyOnTheMac(unittest.TestCase):
+    """A Finder launch never runs ~/.zshrc, so a developer's exported
+    OPENAI_API_KEY was invisible and the dialog asked for a key they
+    already had. The Keychain and the login shell are looked in first."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        mock.patch.object(voice_agent, "HERE", Path(self.tmp.name)).start()
+        mock.patch.object(voice_agent, "application_log").start()
+        self.kept = []
+        mock.patch.object(voice_agent.keystore, "save",
+                          lambda k: self.kept.append(k) or True).start()
+        mock.patch.object(voice_agent.keystore, "forget",
+                          lambda: None).start()
+        self.addCleanup(mock.patch.stopall)
+        os.environ.pop("OPENAI_API_KEY", None)
+        self.addCleanup(os.environ.pop, "OPENAI_API_KEY", None)
+
+    def test_the_keychain_is_believed_first(self):
+        with mock.patch.object(voice_agent.keystore, "load",
+                               return_value="sk-chain"), \
+             mock.patch.object(voice_agent.keystore, "from_login_shell",
+                               side_effect=AssertionError("not needed")):
+            self.assertEqual(voice_agent.find_api_key(), "sk-chain")
+        self.assertEqual(os.environ["OPENAI_API_KEY"], "sk-chain")
+
+    def test_the_login_shells_key_is_taken_and_kept(self):
+        with mock.patch.object(voice_agent.keystore, "load",
+                               return_value=""), \
+             mock.patch.object(voice_agent.keystore, "from_login_shell",
+                               return_value="sk-shell"):
+            self.assertEqual(voice_agent.find_api_key(), "sk-shell")
+        self.assertEqual(self.kept, ["sk-shell"])
+
+    def test_a_shell_key_openai_refused_is_not_believed_again(self):
+        voice_agent.forget_api_key("sk-shell")
+        with mock.patch.object(voice_agent.keystore, "load",
+                               return_value=""), \
+             mock.patch.object(voice_agent.keystore, "from_login_shell",
+                               return_value="sk-shell"):
+            self.assertEqual(voice_agent.find_api_key(), "")
+        self.assertEqual(self.kept, [])
+        self.assertNotIn("OPENAI_API_KEY", os.environ)
+        # A key the user then pastes clears the grudge.
+        voice_agent.save_api_key("sk-new")
+        with mock.patch.object(voice_agent.keystore, "load",
+                               return_value=""), \
+             mock.patch.object(voice_agent.keystore, "from_login_shell",
+                               return_value="sk-shell"):
+            self.assertEqual(voice_agent.find_api_key(), "sk-shell")
+
+    def test_nothing_anywhere_is_nothing(self):
+        with mock.patch.object(voice_agent.keystore, "load",
+                               return_value=""), \
+             mock.patch.object(voice_agent.keystore, "from_login_shell",
+                               return_value=""):
+            self.assertEqual(voice_agent.find_api_key(), "")
 
     def test_check_api_key_reads_openais_verdict(self):
         def refuse(code):

@@ -12,10 +12,12 @@ is left and that is where the words go.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+from .app_bundle import make_icns
 from .observability import application_log
 
 TITLE = "heygent"
@@ -29,12 +31,43 @@ _DIALOG = '''on run argv
   return button returned of answer
 end run''' % TITLE
 
+# The icon: heygent's own when its .icns can be found (item 2, a path or
+# ""), else the stock note icon. A third button (item 3, or "") is
+# reported by name with an empty answer, so the caller can act on it and
+# ask again.
 _SECRET = '''on run argv
   set message to item 1 of argv
-  set answer to display dialog message with title "%s" default answer "" with hidden answer buttons {"Quit", "Save"} default button "Save" with icon note
+  set icns to item 2 of argv
+  set extra to item 3 of argv
+  set labels to {"Quit", "Save"}
+  if extra is not "" then set labels to {"Quit", extra, "Save"}
+  if icns is "" then
+    set answer to display dialog message with title "%s" default answer "" with hidden answer buttons labels default button "Save" with icon note
+  else
+    set answer to display dialog message with title "%s" default answer "" with hidden answer buttons labels default button "Save" with icon POSIX file icns
+  end if
   if button returned of answer is "Quit" then return ""
+  if button returned of answer is extra then return "button:" & extra
   return text returned of answer
-end run''' % TITLE
+end run''' % (TITLE, TITLE)
+
+
+def icon_file(home: Path | None = None) -> str:
+    """heygent.icns: the outer app bundle's when the code runs inside one
+    (Contents/Resources/app/..), else the one the Dock window keeps in the
+    conductor home, made from assets/icon.png when neither exists yet.
+    "" when there is no icon to be had."""
+    here = Path(__file__).resolve().parent.parent
+    outer = here.parent / "heygent.icns"
+    if outer.is_file():
+        return str(outer)
+    home = home or Path(os.environ.get("VOICE_CONDUCTOR_HOME")
+                        or Path.home() / ".voice-conductor")
+    kept = home / "heygent.app" / "Contents" / "Resources" / "heygent.icns"
+    if kept.is_file():
+        return str(kept)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    return str(kept) if make_icns(here / "assets" / "icon.png", kept) else ""
 
 
 def has_terminal() -> bool:
@@ -73,11 +106,14 @@ def alert(text: str, buttons: tuple[str, ...] = ("OK",),
     return _osascript(_DIALOG, text, *buttons, run=run)
 
 
-def ask_secret(text: str, *, run=subprocess.run) -> str:
-    """A hidden-answer dialog; "" when cancelled or unavailable."""
+def ask_secret(text: str, *, button: str = "", icon: str | None = None,
+               run=subprocess.run) -> str:
+    """A hidden-answer dialog; "" when cancelled or unavailable. With a
+    `button`, pressing it returns "button:<label>" instead of an answer."""
     if not can_show():
         return ""
-    return (_osascript(_SECRET, text, run=run) or "").strip()
+    icon = icon_file() if icon is None else icon
+    return (_osascript(_SECRET, text, icon, button, run=run) or "").strip()
 
 
 def tell(text: str, *, run=subprocess.run) -> None:

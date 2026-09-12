@@ -8,8 +8,10 @@
    from the Internet" prompt saying Apple checked it - click **Open**.
 
 The first launch installs what the app needs (a minute or two), then asks
-for your **OpenAI API key** and, if Claude Code is not signed in on your
-Mac, to run `claude auth login`. It also asks for the macOS permissions it
+for your **OpenAI API key** - unless it already finds one, in your
+Keychain or exported in your login shell (`~/.zshrc`) - and keeps it in
+your macOS Keychain (service `heygent`). If Claude Code is not signed in on
+your Mac, it asks you to run `claude auth login`. It also asks for the macOS permissions it
 uses (Microphone, Input Monitoring for the Fn key; Accessibility and Screen
 Recording for computer-use tasks) and says which switch to turn on. After
 that, opening the app just starts it: hold **Fn**, talk, let go.
