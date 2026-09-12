@@ -64,6 +64,26 @@ class TheBundle(unittest.TestCase):
                        timeout=30)
         self.assertTrue(mark.is_file())
 
+    def test_a_standalone_bundle_carries_the_repo(self):
+        (self.repo / "conductor").mkdir()
+        (self.repo / "conductor" / "x.py").write_text("")
+        (self.repo / ".env").write_text("OPENAI_API_KEY=secret\n")
+        with mock.patch.object(app_bundle, "make_icns", return_value=False), \
+             mock.patch.object(app_bundle.shutil, "which",
+                               return_value=None):
+            app = app_bundle.build_bundle(self.repo, self.dest,
+                                          standalone=True)
+        payload = app / "Contents" / "Resources" / "app"
+        self.assertTrue((payload / "conduct.sh").is_file())
+        self.assertTrue((payload / "conductor" / "x.py").is_file())
+        self.assertTrue((payload / app_bundle.STAMP).is_file())
+        self.assertFalse((payload / ".env").exists(),
+                         "a secret travelled inside the bundle")
+        body = (app / "Contents" / "MacOS" / "voice-agent").read_text()
+        self.assertNotIn(str(self.repo), body,
+                         "the standalone launcher points at this checkout")
+        self.assertIn("Resources/app", body)
+
     def test_a_repo_without_conduct_sh_is_refused(self):
         bare = Path(self.scratch.name) / "bare"
         bare.mkdir()
