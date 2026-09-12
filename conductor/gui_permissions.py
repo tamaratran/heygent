@@ -42,6 +42,10 @@ from pathlib import Path
 from . import computer
 from .observability import application_log
 
+# The name macOS shows for the app bundle, in the Dock and in every
+# Privacy & Security list.
+OWN_APP = "heygent"
+
 # The pane for each grant. Voice grants first: without the microphone
 # nothing else matters.
 PANES = {
@@ -69,12 +73,21 @@ NEEDS = {"microphone": "Voice", "input_monitoring": "The Fn hotkey",
 # belong to the terminal alone.
 COMPUTER_GRANTS = ("accessibility", "screen_recording")
 VOICE_GRANTS = ("microphone", "input_monitoring")
-# What has to be restarted for the grant to take effect.
+# What has to be restarted for the grant to take effect, from a terminal.
 RESTARTS = {"microphone": "restart conduct.sh",
             "input_monitoring": "restart your terminal (macOS applies "
                                 "Input Monitoring only to new processes)",
             "accessibility": "restart conduct.sh",
             "screen_recording": "restart conduct.sh"}
+# The same, when the app itself is what was opened.
+APP_RESTARTS = {"microphone": f"quit {OWN_APP} and open it again",
+                "input_monitoring": f"quit {OWN_APP} and open it again "
+                                    "(macOS applies Input Monitoring only "
+                                    "to newly started apps)",
+                "accessibility": f"quit {OWN_APP} and open it again",
+                "screen_recording": f"quit {OWN_APP} and open it again"}
+# The dialog's buttons, when there is no terminal to print on.
+LATER, OPEN_SETTINGS = "Later", "Open Settings"
 
 STATE_FILE = "gui-permissions.json"
 
@@ -258,6 +271,34 @@ def open_pane(url: str) -> bool:
     return done.returncode == 0
 
 
+def register_with_macos(grant: str) -> None:
+    """Have macOS list this app in the grant's pane.
+
+    A pane lists only the apps that have asked for its grant; until this
+    app has, there is no row to turn on - the user was sent to
+    Accessibility and found ChatGPT, iTerm and Terminal there and nothing
+    of ours. Accessibility, Input Monitoring and Screen Recording each
+    have a call that asks (adding the row, and putting up the system's
+    own prompt, which offers the same pane); the Microphone row appears
+    the first time the microphone is opened, so it needs nothing here.
+    """
+    try:
+        if grant == "accessibility":
+            from ApplicationServices import (AXIsProcessTrustedWithOptions,
+                                             kAXTrustedCheckOptionPrompt)
+            AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
+        elif grant == "input_monitoring":
+            from Quartz import CGRequestListenEventAccess
+            CGRequestListenEventAccess()
+        elif grant == "screen_recording":
+            from Quartz import CGRequestScreenCaptureAccess
+            CGRequestScreenCaptureAccess()
+    except Exception:
+        application_log("conductor", "permissions.request_failed",
+                        f"could not ask macOS for {LABELS[grant]}",
+                        severity="warning", exc_info=True, grant=grant)
+
+
 def _load(path: Path) -> tuple[dict, set]:
     """(asked, introduced) as remembered, empty when unreadable."""
     try:
@@ -279,20 +320,40 @@ def _save(path: Path, asked: dict, introduced: set) -> None:
                                indent=2, sort_keys=True))
 
 
-def _message(grant: str, app: str, worker_app: str | None,
-             opened: bool) -> str:
-    label = LABELS[grant]
-    apps = app
+def _apps(grant: str, app: str, worker_app: str | None) -> str:
     # Only computer use runs inside the worker app; the microphone and
     # the hotkey belong to this process alone.
     if worker_app and worker_app != app and grant in COMPUTER_GRANTS:
-        apps = f"{app} and {worker_app} (it runs the workers)"
+        return f"{app} and {worker_app} (it runs the workers)"
+    return app
+
+
+def _restart(grant: str, app: str) -> str:
+    return (APP_RESTARTS if app == OWN_APP else RESTARTS)[grant]
+
+
+def _message(grant: str, app: str, worker_app: str | None,
+             opened: bool) -> str:
+    label = LABELS[grant]
     where = (f"Opening System Settings > Privacy & Security > {label}"
              if opened else
              f"Open System Settings > Privacy & Security > {label}")
     return (f"{NEEDS[grant]} needs {label} {PURPOSES[grant]}, and {app} "
-            f"does not have it. {where}: turn it on for {apps}, then "
-            f"{RESTARTS[grant]}.")
+            f"does not have it. {where}: turn it on for "
+            f"{_apps(grant, app, worker_app)}, then {_restart(grant, app)}.")
+
+
+def _dialog_message(grant: str, app: str, worker_app: str | None) -> str:
+    """The same ask, for a dialog: what to click, row by row, since the
+    person reading it has no terminal and may never have seen the pane."""
+    label = LABELS[grant]
+    apps = _apps(grant, app, worker_app)
+    return (f"{NEEDS[grant]} needs {label} {PURPOSES[grant]}, and {app} "
+            f"does not have it yet.\n\n"
+            f"In System Settings > Privacy & Security > {label}, turn on "
+            f"the switch next to {apps}. If {app} is not in the list, "
+            f"click + and choose {app} from Applications.\n\n"
+            f"Then {_restart(grant, app)}.")
 
 
 def ask_for_missing_grants(home: Path, *, worker_app: str | None = None,
@@ -300,13 +361,19 @@ def ask_for_missing_grants(home: Path, *, worker_app: str | None = None,
                            driver_factory=computer.make_driver,
                            voice_probe=probe_voice_grants,
                            grants=None,
-                           opener=open_pane, announce=print) -> list[Ask]:
+                           opener=open_pane, announce=print,
+                           register=register_with_macos,
+                           dialog=None) -> list[Ask]:
     """Open the pane for each grant this app lacks and has not been asked
     for yet; say which apps to add. Returns what was asked this time.
 
     worker_app is the app hosting the workers when it is not this one
     (cmux, usually): its grant cannot be probed from here, so it is named
     in the ask rather than checked.
+
+    With `dialog` (text, buttons) -> button, the ask is a dialog instead
+    of a printed line - for the app opened from Finder, where print goes
+    to a log file - and the pane opens only when the user chooses to.
     """
     if (platform or sys.platform) != "darwin":
         return []
@@ -336,16 +403,23 @@ def ask_for_missing_grants(home: Path, *, worker_app: str | None = None,
                             f"{app}; asked on {asked[grant]}",
                             grant=grant, app=app)
             continue
-        opened = bool(opener(PANES[grant]))
-        message = _message(grant, app, worker_app, opened)
+        # Before the pane is on screen: the row it has to show.
+        register(grant)
+        if dialog is not None:
+            message = _dialog_message(grant, app, worker_app)
+            chosen = dialog(message, (LATER, OPEN_SETTINGS))
+            opened = chosen == OPEN_SETTINGS and bool(opener(PANES[grant]))
+        else:
+            opened = bool(opener(PANES[grant]))
+            message = _message(grant, app, worker_app, opened)
+            # The sentence goes to the user through announce; the log
+            # keeps the facts (a warning here would print it twice).
+            announce(message)
         asked[grant] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        # The sentence goes to the user through announce; the log keeps
-        # the facts (a warning here would print it a second time).
         application_log("conductor", "permissions.asked",
                         f"asked for {LABELS[grant]} for {app}",
                         grant=grant, app=app, worker_app=worker_app,
-                        pane_opened=opened)
-        announce(message)
+                        pane_opened=opened, dialog=dialog is not None)
         asks.append(Ask(grant, opened, message))
     if (asked, introduced) != before:
         _save(path, asked, introduced)

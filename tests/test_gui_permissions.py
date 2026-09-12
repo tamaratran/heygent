@@ -42,6 +42,7 @@ class Base(unittest.TestCase):
         self.home = Path(self.tmp.name) / "home"
         self.opened: list[str] = []
         self.said: list[str] = []
+        self.registered: list[str] = []
         self.driver = FakeDriver()
         self.voice = {"microphone": True, "input_monitoring": True}
 
@@ -49,7 +50,7 @@ class Base(unittest.TestCase):
         self.tmp.cleanup()
 
     def ask(self, platform="darwin", worker_app="cmux", env=GHOSTTY,
-            opener=None, grants=None) -> list[Ask]:
+            opener=None, grants=None, dialog=None) -> list[Ask]:
         return ask_for_missing_grants(
             self.home, worker_app=worker_app, platform=platform, env=env,
             driver_factory=lambda: self.driver,
@@ -57,7 +58,8 @@ class Base(unittest.TestCase):
                                         for name in wanted},
             grants=grants,
             opener=opener or (lambda url: self.opened.append(url) or True),
-            announce=self.said.append)
+            announce=self.said.append,
+            register=self.registered.append, dialog=dialog)
 
     def remembered(self) -> dict:
         path = self.home / STATE_FILE
@@ -159,17 +161,21 @@ class StayingHarmless(Base):
             driver_factory=no_driver,
             voice_probe=lambda wanted: {name: None for name in wanted},
             opener=lambda url: self.opened.append(url) or True,
-            announce=self.said.append)
+            announce=self.said.append, register=self.registered.append)
         self.assertEqual(asks, [])
         self.assertEqual(self.opened, [])
 
     def test_the_real_opener_is_never_the_default_in_these_tests(self) -> None:
-        """A guard on the guard: the module's default opener runs `open`,
-        which this suite must never reach."""
+        """A guard on the guard: the module's default opener runs `open`
+        and its default register puts up macOS's own prompt, which this
+        suite must never reach."""
         self.assertIs(ask_for_missing_grants.__defaults__, None)
         self.assertEqual(
             ask_for_missing_grants.__kwdefaults__["opener"],
             gui_permissions.open_pane)
+        self.assertEqual(
+            ask_for_missing_grants.__kwdefaults__["register"],
+            gui_permissions.register_with_macos)
 
 
 class NamingTheApp(unittest.TestCase):
@@ -197,7 +203,8 @@ class NamingTheApp(unittest.TestCase):
             env={"__CFBundleIdentifier": "com.cmuxterm.app"},
             driver_factory=lambda: FakeDriver(accessibility=False),
             voice_probe=lambda wanted: {name: True for name in wanted},
-            opener=lambda url: True, announce=said.append)
+            opener=lambda url: True, announce=said.append,
+            register=lambda grant: None)
         tmp.cleanup()
         self.assertEqual(said[-1].count("cmux"), 2, said[-1])
         self.assertNotIn("cmux and cmux", said[-1])
@@ -241,6 +248,62 @@ class VoiceGrants(Base):
         asks = self.ask(grants=("microphone", "input_monitoring"))
         self.assertEqual([a.grant for a in asks], ["microphone"])
         self.assertEqual(self.opened, [PANES["microphone"]])
+
+
+class FromFinder(Base):
+    """Opened as heygent.app there is no terminal: print goes to a log
+    file, and what the user saw was System Settings opening on a list
+    with no heygent in it and no word of what to do. So the ask is a
+    dialog, the row is put in the list first, and the pane opens when
+    they say so."""
+
+    HEYGENT = {"__CFBundleIdentifier": "ai.heygent.conductor"}
+
+    def dialog(self, answer):
+        self.shown: list[tuple[str, tuple]] = []
+
+        def show(text, buttons):
+            self.shown.append((text, buttons))
+            return answer
+        return show
+
+    def test_the_row_is_registered_before_the_pane_is_offered(self) -> None:
+        self.driver = FakeDriver(accessibility=False)
+        asks = self.ask(env=self.HEYGENT, worker_app=None,
+                        dialog=self.dialog(gui_permissions.OPEN_SETTINGS))
+        self.assertEqual(self.registered, ["accessibility"])
+        self.assertEqual(self.opened, [PANES["accessibility"]])
+        self.assertTrue(asks[0].opened)
+        text, buttons = self.shown[0]
+        self.assertEqual(buttons, (gui_permissions.LATER,
+                                   gui_permissions.OPEN_SETTINGS))
+        self.assertIn("switch next to heygent", text)
+        self.assertIn("click + and choose heygent", text)
+        self.assertIn("quit heygent and open it again", text)
+        self.assertNotIn("conduct.sh", text)
+        self.assertEqual(self.said[1:], [], "printed as well as shown")
+
+    def test_later_leaves_settings_closed_and_does_not_nag(self) -> None:
+        self.voice["input_monitoring"] = False
+        asks = self.ask(env=self.HEYGENT,
+                        dialog=self.dialog(gui_permissions.LATER))
+        self.assertEqual(self.opened, [])
+        self.assertFalse(asks[0].opened)
+        self.assertIn("newly started apps", self.shown[0][0])
+        self.assertEqual(self.ask(env=self.HEYGENT,
+                                  dialog=self.dialog(gui_permissions.LATER)),
+                         [], "asked again next launch")
+
+    def test_the_row_is_registered_from_a_terminal_too(self) -> None:
+        self.driver = FakeDriver(screen_recording=False)
+        self.ask()
+        self.assertEqual(self.registered, ["screen_recording"])
+        self.assertIn("restart conduct.sh", self.said[-1])
+
+    def test_conduct_shows_the_dialog_only_without_a_terminal(self) -> None:
+        source = (ROOT / "conduct.py").read_text()
+        self.assertIn("dialog=None if dialogs.has_terminal() else "
+                      "dialogs.alert", source)
 
 
 class FirstLaunchBanner(Base):

@@ -66,6 +66,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import deque
 from pathlib import Path
 
@@ -74,6 +76,7 @@ import numpy as np
 import sounddevice as sd
 
 import boss
+from conductor import dialogs
 from conductor.manager import VERBATIM_FOOTER, VERBATIM_HEADER
 from conductor.observability import (JsonlSink, LoggingSink,
                                      ObservabilityBus, ObservabilityEvent,
@@ -358,34 +361,130 @@ def load_env() -> None:
             os.environ.pop(key, None)
 
 
-def ask_for_api_key() -> str:
-    """A missing OpenAI key, asked for on the terminal and kept in .env,
-    so a first run needs no file editing. Non-interactive runs get ""."""
-    try:
-        if not sys.stdin.isatty():
-            return ""
-    except Exception:
-        return ""
-    print("An OpenAI API key is needed "
-          "(https://platform.openai.com/api-keys).")
-    try:
-        key = getpass.getpass(
-            "Paste it here (hidden, saved to .env): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        return ""
+OPENAI_KEYS_URL = "https://platform.openai.com/api-keys"
+OPENAI_BILLING_URL = "https://platform.openai.com/settings/organization/billing"
+OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
+KEY_PROMPT = ("heygent needs an OpenAI API key to hear and speak.\n\n"
+              f"Create one at {OPENAI_KEYS_URL} (the account needs credit, "
+              "and access to GPT Live), then paste it below. It is saved to "
+              "~/.voice-conductor/app/.env and never leaves this Mac except "
+              "to talk to OpenAI.")
+# An error that is a decision OpenAI made about this key or account, not
+# the network: a new socket gets the same answer, so it is not retried.
+REFUSAL_CODES = {
+    "invalid_api_key": "OpenAI says the key is invalid",
+    "credit_balance_exhausted": "OpenAI says the account has no credit",
+    "insufficient_quota": "OpenAI says the account has no quota left",
+    "model_not_found": f"OpenAI says this key cannot use {MODEL}",
+}
+REFUSAL_URLS = {
+    "invalid_api_key": OPENAI_KEYS_URL,
+    "credit_balance_exhausted": OPENAI_BILLING_URL,
+    "insufficient_quota": OPENAI_BILLING_URL,
+    "model_not_found": OPENAI_KEYS_URL,
+}
+KEY_REFUSED = "key refused"
+
+
+def save_api_key(key: str) -> None:
+    path = HERE / ".env"
+    existing = path.read_text() if path.exists() else ""
+    lines = [line for line in existing.splitlines()
+             if not line.strip().startswith("OPENAI_API_KEY")]
     if key:
-        path = HERE / ".env"
-        existing = path.read_text() if path.exists() else ""
-        if existing and not existing.endswith("\n"):
-            existing += "\n"
-        lines = [line for line in existing.splitlines()
-                 if not line.strip().startswith("OPENAI_API_KEY")]
         lines.append(f"OPENAI_API_KEY={key}")
-        path.write_text("\n".join(lines) + "\n")
-        os.environ["OPENAI_API_KEY"] = key
-        application_log("voice", "app.api_key_saved",
-                        "the OpenAI key was taken on the terminal "
-                        "and saved to .env")
+    path.write_text("\n".join(lines) + "\n" if lines else "")
+
+
+def forget_api_key() -> None:
+    """Drop a key OpenAI refused, so the next launch asks for one instead
+    of failing the same way."""
+    if (HERE / ".env").exists():
+        save_api_key("")
+    os.environ.pop("OPENAI_API_KEY", None)
+
+
+def check_api_key(key: str, opener=urllib.request.urlopen) -> str | None:
+    """Ask OpenAI whether it takes this key. The sentence to show when it
+    does not; None when it does, or when the answer is not about the key
+    (no network, a 5xx) - the live session finds out then."""
+    request = urllib.request.Request(
+        OPENAI_MODELS_URL, headers={"Authorization": f"Bearer {key}"})
+    try:
+        with opener(request, timeout=10):
+            return None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            return (f"OpenAI rejected that key (HTTP 401). Check it at "
+                    f"{OPENAI_KEYS_URL} and paste it again.")
+        if exc.code == 403:
+            return ("OpenAI refused that key (HTTP 403): the account or "
+                    f"project it belongs to is not allowed in. See "
+                    f"{OPENAI_KEYS_URL}.")
+        return None
+    except (OSError, ValueError):
+        return None
+
+
+def refusal_from_error(error: dict) -> str | None:
+    """The sentence for a Live API error event that is a refusal of the
+    key or account; None for any other error."""
+    code = str(error.get("code") or "")
+    if code not in REFUSAL_CODES:
+        return None
+    detail = str(error.get("message") or "").strip()
+    text = REFUSAL_CODES[code]
+    if detail:
+        text += f": {detail}"
+    if REFUSAL_URLS[code] not in text:
+        text += f"\n\nFix it at {REFUSAL_URLS[code]}"
+    return text
+
+
+def refusal_from_status(status: int) -> str | None:
+    if status == 401:
+        return ("OpenAI rejected the API key (HTTP 401). heygent has "
+                "forgotten it; open heygent again to paste a new one "
+                f"from {OPENAI_KEYS_URL}.")
+    if status == 403:
+        return ("OpenAI refused the API key (HTTP 403): the account or "
+                "project it belongs to is not allowed to use GPT Live. "
+                f"See {OPENAI_KEYS_URL}.")
+    return None
+
+
+def ask_for_api_key(check=None) -> str:
+    """A missing OpenAI key, asked for and kept in .env, so a first run
+    needs no file editing: on the terminal when there is one, in a dialog
+    when the app was opened from Finder. A key OpenAI rejects is asked
+    for again; "" when the user gives up or nothing can ask."""
+    check = check_api_key if check is None else check
+    on_terminal = dialogs.has_terminal()
+    if not on_terminal and not dialogs.can_show():
+        return ""
+    while True:
+        if on_terminal:
+            print(f"An OpenAI API key is needed ({OPENAI_KEYS_URL}).")
+            try:
+                key = getpass.getpass(
+                    "Paste it here (hidden, saved to .env): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return ""
+        else:
+            key = dialogs.ask_secret(KEY_PROMPT)
+        if not key:
+            return ""
+        rejected = check(key)
+        if rejected is None:
+            break
+        application_log("voice", "app.api_key_rejected", rejected,
+                        severity="warning")
+        dialogs.tell(rejected)
+    save_api_key(key)
+    os.environ["OPENAI_API_KEY"] = key
+    application_log("voice", "app.api_key_saved",
+                    "the OpenAI key was taken from the user and saved to "
+                    ".env")
     return key
 
 
@@ -666,6 +765,24 @@ class VoiceAgent:
         self.pending_commentary = ""
         self.event_id = 0
         self.running = False
+        # Set when OpenAI refused the key or the account: the sentence for
+        # the user, and whether the key itself is the problem (then it is
+        # forgotten, so the next launch asks for a new one).
+        self.refusal = ""
+        self.refused_key = False
+
+    async def _give_up_on_key(self) -> None:
+        """OpenAI has refused the key or the account. Reconnecting gets
+        the same answer, so stop, and tell the user what to fix - in a
+        dialog when the app was opened from Finder, where stderr is a log
+        file nobody is watching."""
+        application_log("voice", "voice.key_refused", self.refusal,
+                        severity="error",
+                        key_forgotten=self.refused_key)
+        if self.refused_key:
+            forget_api_key()
+        await asyncio.to_thread(dialogs.tell, self.refusal)
+        self.ui.request_quit("the OpenAI key was refused")
 
     # -- observability --------------------------------------------------
     def _emit(self, event_type: str, severity: str = "info",
@@ -1441,6 +1558,9 @@ class VoiceAgent:
                         await asyncio.sleep(delay)
                     ended = await self._one_connection(session, headers,
                                                        attempt)
+                    if ended == KEY_REFUSED:
+                        await self._give_up_on_key()
+                        break
                     if ended == "closed_by_server" or self.stopping:
                         break
                     attempt += 1
@@ -1471,6 +1591,13 @@ class VoiceAgent:
         try:
             ws = await session.ws_connect(LIVE_WS, headers=headers,
                                           heartbeat=20)
+        except aiohttp.WSServerHandshakeError as exc:
+            refusal = refusal_from_status(exc.status)
+            if refusal:
+                self.refusal = refusal
+                self.refused_key = exc.status == 401
+                return KEY_REFUSED
+            return f"connect failed: {type(exc).__name__} {exc.status}"
         except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as exc:
             return f"connect failed: {type(exc).__name__}"
         async with ws:
@@ -1593,13 +1720,19 @@ class VoiceAgent:
                     "delegation_id": (event.get("delegation") or {}).get("id", ""),
                     "offset_ms": event.get("offset_ms")})
             elif kind == "error":
-                print(f"live api error: {event.get('error')}",
+                error = event.get("error")
+                print(f"live api error: {error}",
                       file=sys.stderr, flush=True)
                 application_log("voice", "voice.provider_error",
-                                str(event.get("error"))[:300],
-                                severity="error")
+                                str(error)[:300], severity="error")
                 self._emit("voice.error", severity="error",
-                           data={"error": str(event.get("error"))[:300]})
+                           data={"error": str(error)[:300]})
+                refusal = (refusal_from_error(error)
+                           if isinstance(error, dict) else None)
+                if refusal:
+                    self.refusal = refusal
+                    self.refused_key = error.get("code") == "invalid_api_key"
+                    return KEY_REFUSED
             elif kind == "session.closed":
                 self._emit("voice.session_closed")
                 return "closed_by_server"
