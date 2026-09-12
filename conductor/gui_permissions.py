@@ -178,6 +178,13 @@ def probe_voice_grants(wanted=VOICE_GRANTS) -> dict:
     return grants
 
 
+def microphone_denied(voice_probe=probe_voice_grants) -> bool:
+    """Whether macOS has said no to this app's microphone. Only an
+    explicit denial: unknown, or not yet asked, is left to macOS's own
+    prompt on first use."""
+    return voice_probe(("microphone",)).get("microphone") is False
+
+
 def wants_color(env=None) -> bool:
     """Whether stdout is a terminal that takes ANSI styling."""
     env = os.environ if env is None else env

@@ -375,3 +375,33 @@ class AskedAtTheStart(unittest.TestCase):
         source = (ROOT / "conduct.py").read_text()
         self.assertIn("asyncio.to_thread(\n        ask_for_missing_grants",
                       source)
+
+
+class ADeniedMicrophoneIsARefusal(unittest.TestCase):
+    """A Mac where the Microphone switch is off looks alive and hears
+    nothing: the stream opens and delivers zeros. Asked for once like
+    the other grants; after that, said as a refusal before the app
+    quits, the way a refused Fn tap is."""
+
+    def test_only_an_explicit_denial(self) -> None:
+        from conductor.gui_permissions import microphone_denied
+        self.assertTrue(microphone_denied(lambda w: {"microphone": False}))
+        self.assertFalse(microphone_denied(lambda w: {"microphone": True}))
+        self.assertFalse(microphone_denied(lambda w: {"microphone": None}))
+        self.assertFalse(microphone_denied(lambda w: {}))
+
+    def test_conduct_refuses_after_the_ask_and_releases_the_instance(
+            self) -> None:
+        source = (ROOT / "conduct.py").read_text()
+        ask = source.index("asks = await asyncio.to_thread(\n"
+                           "        ask_for_missing_grants, home")
+        refuse = source.index('explain_refusal, "microphone"')
+        self.assertLess(ask, refuse)
+        self.assertLess(refuse, source.index("await preflight_surface("))
+        tail = source[refuse:refuse + 400]
+        self.assertIn("instance.release(home, current_run())", tail)
+        self.assertIn("return 1", tail)
+        # The first denial was just asked for in a dialog of its own; a
+        # second dialog on top of it says the same thing twice.
+        self.assertIn('all(ask.grant != "microphone" for ask in asks)',
+                      source)
