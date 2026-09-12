@@ -9,7 +9,11 @@
 Fn is not an ordinary key on macOS: it never arrives as a keyDown, only as a
 flagsChanged event carrying kCGEventFlagMaskSecondaryFn. Reading it needs a
 Quartz event tap, which needs Input Monitoring permission for whichever app
-owns this process (Terminal, iTerm, ...).
+owns this process (heygent.app, Terminal, iTerm, ...). Without it this
+exits at once with an error line naming the grant, rather than sit on a
+tap that never fires:
+
+    {"error": "event tap refused", "grant": "input_monitoring", "hint": ...}
 
     {"fn": true}      # pressed
     {"fn": false}     # released
@@ -351,6 +355,25 @@ def main() -> int:
             return
         report(gate.confirm(fn_held(flags), now), source="poll", flags=flags)
 
+    def refused() -> int:
+        # Named as the grant, so the parent can say which pane and which
+        # row, in its words.
+        emit(error="event tap refused", grant="input_monitoring",
+             hint="Input Monitoring is not granted to the app this runs "
+                  "in (System Settings > Privacy & Security > Input "
+                  "Monitoring); grant it, then start again.")
+        return 1
+
+    # Key events reach a tap only when the app this process belongs to
+    # has Input Monitoring. Without it some macOS versions refuse the tap
+    # (None below); macOS 26 hands over a tap that never fires - Fn does
+    # nothing, the poll never sees the key, and nothing says why
+    # (measured 2026-09-12, heygent.app from Finder). The preflight is
+    # the one answer that holds either way, so it is asked first.
+    preflight = getattr(Quartz, "CGPreflightListenEventAccess", None)
+    if preflight is not None and not preflight():
+        return refused()
+
     tap = Quartz.CGEventTapCreate(
         Quartz.kCGSessionEventTap,
         Quartz.kCGHeadInsertEventTap,
@@ -360,14 +383,7 @@ def main() -> int:
         None,
     )
     if tap is None:
-        # macOS says no to a listen-only tap for one reason: the app this
-        # process belongs to lacks Input Monitoring. Named as the grant,
-        # so the parent can say which pane and which row, in its words.
-        emit(error="event tap refused", grant="input_monitoring",
-             hint="Input Monitoring is not granted to the app this runs "
-                  "in (System Settings > Privacy & Security > Input "
-                  "Monitoring); grant it, then start again.")
-        return 1
+        return refused()
 
     source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
     Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetCurrent(), source,
