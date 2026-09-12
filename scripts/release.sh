@@ -88,12 +88,27 @@ echo "== dmg"
 # an Applications folder to drag it onto. The image is signed and
 # notarized in its own right, so opening it is as quiet as opening the
 # app; the app inside carries its own stapled ticket.
+#
+# The window's look - the background with the arrow, the two icons
+# placed on it, no toolbar - is Finder's view settings, stored in the
+# volume's .DS_Store. Finder writes that file itself, so the image is
+# first made writable, mounted, and laid out through Finder, then
+# converted into the compressed read-only image that ships.
 staging="$(mktemp -d)"
 ditto "$APP" "$staging/heygent.app"
 ln -s /Applications "$staging/Applications"
+mkdir "$staging/.background"
+uv run -q scripts/dmg_background.py "$staging/.background/background.png"
+rw="$DIST/heygent-rw.dmg"
 hdiutil create -quiet -volname heygent -srcfolder "$staging" -fs HFS+ \
-  -format UDZO -ov "$DMG"
+  -format UDRW -ov "$rw"
 rm -rf "$staging"
+hdiutil attach -quiet -readwrite -noverify -noautoopen "$rw"
+osascript scripts/dmg_layout.applescript heygent
+sync
+hdiutil detach -quiet /Volumes/heygent
+hdiutil convert -quiet -format UDZO -imagekey zlib-level=9 -ov "$rw" -o "$DMG"
+rm "$rw"
 codesign --sign "$IDENTITY" --timestamp "$DMG"
 notarize "$DMG" notarize-dmg.log
 xcrun stapler staple "$DMG"
