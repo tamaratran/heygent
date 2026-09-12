@@ -118,6 +118,11 @@ class ConductorVoice(VoiceAgent):
         # turns are drawn there too, as they happen.
         self.mirror = None
 
+    async def _watch_overlay(self, stream) -> None:
+        # main()'s read_overlay owns the pipe and hands every message to
+        # handle_overlay_event; a second reader on one StreamReader raises.
+        return
+
     def _reply_spoken(self, text: str) -> None:
         # The Boss learns what the voice said through what_the_voice_said,
         # when it asks; nothing is typed into its window for this.
@@ -719,6 +724,7 @@ async def main() -> int:
     # it - never cmux, which the window replaced (assigned below, after
     # the window opens).
     boss_page, boss_window = None, None
+    window_watcher: asyncio.Task | None = None
 
     async def focus_session(task_id: str) -> None:
         """Where a notification's or toast's deep link lands."""
@@ -1060,11 +1066,14 @@ async def main() -> int:
     for state in conductor.subagent_states():
         ui.send(notice=project_card(state))
 
+    agent: ConductorVoice | None = None
+
     async def read_overlay() -> None:
         """Dropdown clicks: mark the task (or one notification) read."""
         while True:
             line = await overlay.stdout.readline()
             if not line:
+                ui.request_quit("the overlay exited")
                 return
             try:
                 event = json.loads(line)
@@ -1127,6 +1136,10 @@ async def main() -> int:
                                 severity="error", exc_info=True,
                                 task_id=task_id, source="notification")
                     asyncio.create_task(focus())
+            if event.get("event") == "quit_requested" and agent is None:
+                ui.request_quit("Quit chosen in the overlay menu")
+            elif agent is not None:
+                agent.handle_overlay_event(event)
 
     overlay_reader = asyncio.create_task(read_overlay())
 
@@ -1194,6 +1207,17 @@ async def main() -> int:
                 await window_bridge.start(
                     uv, HERE / "conductor" / "app_mac.py", home / "boss")
                 boss_window = window_bridge.process
+
+                async def quit_with_window(process) -> None:
+                    """The window's process is the app in the Dock, and
+                    Quit there (or a crash) takes it away for good - the
+                    x only hides it. With no way back to the window, the
+                    whole run ends with it."""
+                    await process.wait()
+                    ui.request_quit("the Boss window quit")
+
+                window_watcher = asyncio.create_task(
+                    quit_with_window(boss_window))
             else:
                 await boss_page.start()
                 boss_window = await asyncio.create_subprocess_exec(
@@ -1306,7 +1330,7 @@ async def main() -> int:
     try:
         if args.no_hotkey:
             agent.holding = True
-            await session_task
+            await ui.wait_with(session_task)
         else:
             print("hold Fn and talk, release to get an answer, "
                   "double-tap Fn for notifications, ctrl-c to quit",
@@ -1328,6 +1352,8 @@ async def main() -> int:
         sweeper.cancel()
         for reader in stderr_readers:
             reader.cancel()
+        if window_watcher is not None:
+            window_watcher.cancel()
         stall_monitor.cancel()
         notifications.close()
         if hasattr(conductor.manager, "close"):
