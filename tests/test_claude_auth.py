@@ -67,8 +67,17 @@ class TellingTheUser(unittest.TestCase):
             for verdict in (True, None):
                 self.assertTrue(claude_auth.ensure_logged_in(
                     {}, status=lambda env: verdict,
+                    refused=lambda env: "",
                     alert=lambda *a: self.fail("alerted"),
                     open_terminal=lambda: self.fail("opened")))
+
+    def test_no_login_is_not_probed(self):
+        with mock.patch.object(claude_auth, "application_log"), \
+             mock.patch.object(dialogs, "has_terminal", return_value=True), \
+             mock.patch.object(dialogs, "tell"):
+            self.assertFalse(claude_auth.ensure_logged_in(
+                {}, status=lambda env: False,
+                refused=lambda env: self.fail("probed without a login")))
 
     def test_from_finder_a_dialog_offers_the_login(self):
         shown = []
@@ -125,6 +134,118 @@ class TellingTheUser(unittest.TestCase):
         self.assertEqual(cmd[:2], ["osascript", "-"])
         self.assertEqual(cmd[2], "/Users/me/.local/bin/claude auth login")
         self.assertIn('tell application "Terminal"', script)
+
+
+def turn(payload, code: int = 0):
+    return cli(json.dumps(payload), code)
+
+
+class AskingClaudeOneWord(unittest.TestCase):
+    """`claude -p ok` as the CLI answers it: is_error with the API's
+    message in result when the account is not served."""
+
+    def test_an_answer_is_no_refusal(self):
+        ran = []
+
+        def run(cmd, **kwargs):
+            ran.append((cmd, kwargs))
+            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
+                {"is_error": False, "result": "ok", "subtype": "success"}),
+                stderr="")
+        self.assertEqual(claude_auth.refusal(
+            {}, run=run, which=lambda n: "/x/claude"), "")
+        cmd, kwargs = ran[0]
+        self.assertEqual(cmd[:3], ["/x/claude", "-p", "ok"])
+        self.assertIn("--max-turns", cmd)
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "")
+        self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
+        self.assertGreater(kwargs["timeout"], 0)
+
+    def test_the_api_error_is_the_reason(self):
+        with mock.patch.object(claude_auth, "application_log") as log:
+            reason = claude_auth.refusal({}, run=turn({
+                "is_error": True, "terminal_reason": "api_error",
+                "result": "Your credit balance is too low to access the "
+                          "Anthropic API. Please go to Plans & Billing."}),
+                which=lambda n: "/x/claude")
+        self.assertIn("credit balance is too low", reason)
+        self.assertEqual(log.call_args[0][1], "claude.refused")
+
+    def test_nothing_learned_is_no_refusal(self):
+        """No CLI, a hang, no JSON: the Boss window says what it says,
+        as before - a guess here would stop a working account."""
+        def hangs(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+        def missing(cmd, **kwargs):
+            raise FileNotFoundError(cmd[0])
+        with mock.patch.object(claude_auth, "application_log"):
+            self.assertEqual(claude_auth.refusal(
+                {}, run=cli(""), which=lambda n: None), "")
+            self.assertEqual(claude_auth.refusal(
+                {}, run=hangs, which=lambda n: "/x/claude"), "")
+            self.assertEqual(claude_auth.refusal(
+                {}, run=missing, which=lambda n: "/x/claude"), "")
+            self.assertEqual(claude_auth.refusal(
+                {}, run=cli("Welcome to Claude", 1),
+                which=lambda n: "/x/claude"), "")
+            self.assertEqual(claude_auth.refusal(
+                {}, run=cli("[1, 2]"), which=lambda n: "/x/claude"), "")
+
+    def test_the_page_that_fixes_it(self):
+        self.assertEqual(claude_auth.fix_url(
+            "Your credit balance is too low to access the Anthropic API."),
+            claude_auth.CONSOLE_BILLING_URL)
+        self.assertEqual(claude_auth.fix_url(
+            "This account does not have an active subscription."),
+            claude_auth.SUBSCRIBE_URL)
+
+
+class TellingAboutTheRefusal(unittest.TestCase):
+    REASON = "Your credit balance is too low to access the Anthropic API."
+
+    def test_from_finder_a_dialog_opens_the_page(self):
+        shown, opened = [], []
+        with mock.patch.object(claude_auth, "application_log"), \
+             mock.patch.object(dialogs, "has_terminal", return_value=False):
+            ok = claude_auth.ensure_logged_in(
+                {}, status=lambda env: True,
+                refused=lambda env: self.REASON,
+                alert=lambda text, buttons: shown.append((text, buttons))
+                or "Open Claude",
+                open_terminal=lambda: self.fail("a login for a signed-in Mac"),
+                open_url=lambda url: opened.append(url) or True)
+        self.assertFalse(ok)
+        text, buttons = shown[0]
+        self.assertIn(self.REASON, text)
+        self.assertIn("Pro or Max subscription", text)
+        self.assertEqual(buttons, ("Quit", "Open Claude"))
+        self.assertEqual(opened, [claude_auth.CONSOLE_BILLING_URL])
+
+    def test_quit_opens_nothing(self):
+        opened = []
+        with mock.patch.object(claude_auth, "application_log"), \
+             mock.patch.object(dialogs, "has_terminal", return_value=False):
+            ok = claude_auth.ensure_logged_in(
+                {}, status=lambda env: None,
+                refused=lambda env: "No active subscription.",
+                alert=lambda text, buttons: "Quit",
+                open_url=lambda url: opened.append(url) or True)
+        self.assertFalse(ok)
+        self.assertEqual(opened, [])
+
+    def test_on_a_terminal_the_words_are_printed(self):
+        told = []
+        with mock.patch.object(claude_auth, "application_log"), \
+             mock.patch.object(dialogs, "has_terminal", return_value=True), \
+             mock.patch.object(dialogs, "tell", told.append):
+            ok = claude_auth.ensure_logged_in(
+                {}, status=lambda env: True,
+                refused=lambda env: self.REASON,
+                alert=lambda *a: self.fail("a dialog on a terminal"),
+                open_url=lambda url: self.fail("opened"))
+        self.assertFalse(ok)
+        self.assertIn(self.REASON, told[0])
 
 
 class Dialogs(unittest.TestCase):
