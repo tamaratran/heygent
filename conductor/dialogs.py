@@ -31,6 +31,7 @@ end run''' % TITLE
 _SECRET = '''on run argv
   set message to item 1 of argv
   set answer to display dialog message with title "%s" default answer "" with hidden answer buttons {"Quit", "Save"} default button "Save" with icon note
+  if button returned of answer is "Quit" then return ""
   return text returned of answer
 end run''' % TITLE
 

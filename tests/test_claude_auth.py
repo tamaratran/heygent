@@ -171,6 +171,16 @@ class Dialogs(unittest.TestCase):
             self.assertIsNone(dialogs.alert("x", run=cancelled))
             self.assertEqual(dialogs.ask_secret("x", run=cancelled), "")
 
+    def test_quit_with_a_key_typed_is_still_quit(self):
+        """Only the Cancel button cancels an AppleScript dialog; Quit is
+        an ordinary button, so the script itself has to hand back nothing
+        for it - or the half-typed key went off to OpenAI to be checked
+        and its refusal came up instead of the app quitting."""
+        self.assertIn('if button returned of answer is "Quit" then '
+                      'return ""', dialogs._SECRET)
+        self.assertLess(dialogs._SECRET.index('is "Quit"'),
+                        dialogs._SECRET.index("return text returned"))
+
     def test_off_macos_there_is_no_dialog(self):
         with mock.patch.object(dialogs.sys, "platform", "linux"):
             self.assertFalse(dialogs.can_show())
