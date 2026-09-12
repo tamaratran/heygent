@@ -114,6 +114,20 @@ class TheBossComesForwardOnTheFirstTurn(unittest.TestCase):
         self.assertTrue(turn.reply)
         self.assertNotIn("boss.window_shown", self.events())
 
+    def test_conducts_show_window_needs_no_loop(self):
+        """show_window is handed to a worker thread (to_thread), where
+        asyncio.get_event_loop() raises "no current event loop" and the
+        Boss window never came forward (measured 2026-09-12, every
+        speech run). Both raises are plain calls there."""
+        source = (Path(__file__).resolve().parents[1] / "conduct.py") \
+            .read_text()
+        start = source.index("def show_boss_window()")
+        body = source[start:source.index("if isinstance(conductor.manager",
+                                         start)]
+        self.assertNotIn("get_event_loop", body)
+        self.assertNotIn("run_in_executor", body)
+        self.assertIn("raise_by_pid()", body)
+
 
 class TheCmuxRuntimeKnowsAQuietLaunch(Base):
     def create(self, rt, name="cond_task_a"):

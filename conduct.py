@@ -1256,11 +1256,16 @@ async def main() -> int:
                 try:
                     raise_boss_window(boss_window.pid)
                 except Exception:
-                    pass
+                    application_log("ui", "boss.window_raise_failed",
+                                    "System Events could not front the "
+                                    "Boss window", severity="warning",
+                                    exc_info=True)
 
             def show_boss_window() -> None:
+                """Runs off the loop (PtyManagerBackend.voice_turn hands
+                it to a thread), so both raises are plain calls here."""
                 window_bridge.raise_window()
-                asyncio.get_event_loop().run_in_executor(None, raise_by_pid)
+                raise_by_pid()
 
             if isinstance(conductor.manager, PtyManagerBackend):
                 conductor.manager.on_prose = boss_page.mirror_delta
