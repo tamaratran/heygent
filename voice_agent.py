@@ -85,7 +85,8 @@ from conductor.observability import (JsonlSink, LoggingSink,
                                      current_run, drain_subprocess_stderr,
                                      install_asyncio_exception_handler,
                                      new_trace, start_loop_stall_monitor)
-from conductor.gui_permissions import VOICE_GRANTS, ask_for_missing_grants
+from conductor.gui_permissions import (VOICE_GRANTS, ask_for_missing_grants,
+                                       probe_voice_grants)
 from conductor.projects import DEFAULT_HOME
 
 HERE = Path(__file__).resolve().parent
@@ -797,6 +798,14 @@ class VoiceAgent:
         self.last_mic_at = 0.0
         self.audio_recovering = False
         self.mic_level = 0.0
+        # Whether any block of this hold carried a signal at all. A denied
+        # microphone is not an error anywhere: CoreAudio opens it and
+        # delivers exact zeros, so the capsule shows, nothing is
+        # transcribed, and this is the only place that failure is visible.
+        self.hold_heard = False
+        self.hold_blocks = 0              # blocks the stream delivered this hold
+        self.silence_told = False
+        self.silence_task: asyncio.Task | None = None
         # The one speakable channel, held by one caller at a time. There
         # is a single audio stream out of this session, and two callers
         # reach it: the coordinator, speaking a queued notification, and
@@ -865,6 +874,41 @@ class VoiceAgent:
     # Shorter than any real press. A "hold" under this did not come from a
     # finger, so the utterance it was carrying was lost.
     IMPLAUSIBLE_HOLD_MS = 150.0
+    # A hold at least this long with not one non-zero sample is a
+    # microphone that hears nothing, not a person who said nothing: a
+    # live input always carries a noise floor.
+    SILENT_HOLD_MS = 1000.0
+
+    async def _heard_nothing(self, held_ms: float) -> None:
+        """The microphone delivered only zeros for the whole hold. Say why,
+        once per run: a Microphone grant macOS denied (the usual cause on
+        a fresh Mac - the switch is off, and the app hears digital
+        silence), or an input device that is muted or gone."""
+        grant = probe_voice_grants(("microphone",)).get("microphone")
+        application_log("voice", "voice.mic_heard_nothing",
+                        f"the microphone delivered only silence for a "
+                        f"{held_ms}ms hold", severity="error",
+                        trace_id=self.trace_id, duration_ms=held_ms,
+                        device=self.mic_device, microphone_granted=grant)
+        if self.silence_told:
+            return
+        self.silence_told = True
+        device = self.mic_device or "the input device"
+        if grant is False:
+            fix = ("macOS is not letting heygent use the microphone. In "
+                   "System Settings > Privacy & Security > Microphone, "
+                   "turn on the switch next to heygent, then quit heygent "
+                   "and open it again.")
+        else:
+            fix = ("Check System Settings > Sound > Input: that the right "
+                   "device is selected and its input level moves when you "
+                   "speak. If heygent is missing from System Settings > "
+                   "Privacy & Security > Microphone, turn it on there, then "
+                   "quit heygent and open it again.")
+        await asyncio.to_thread(
+            dialogs.tell,
+            f"heygent heard nothing: {device} delivered only silence "
+            f"while Fn was held.\n\n{fix}")
 
     async def set_holding(self, value: bool, gate_sent: bool = False,
                           double_tap: bool = False) -> None:
@@ -900,6 +944,8 @@ class VoiceAgent:
             # the length the finger made it.
             self.held_at = self.key_moved_at if gate_sent \
                 else time.monotonic()
+            self.hold_heard = False
+            self.hold_blocks = 0
             if self.speaker.speaking:
                 self._emit("voice.barge_in")
             self._emit("voice.listening_started")
@@ -929,6 +975,11 @@ class VoiceAgent:
                                 "anything said into it was dropped",
                                 severity="warning", trace_id=self.trace_id,
                                 duration_ms=held_ms)
+            elif held_ms is not None and held_ms >= self.SILENT_HOLD_MS \
+                    and self.hold_blocks and not self.hold_heard \
+                    and not self.audio_recovering:
+                self.silence_task = asyncio.ensure_future(
+                    self._heard_nothing(held_ms))
             self._emit("voice.listening_stopped", duration_ms=held_ms)
 
     def key_changed(self, down: bool, double: bool = False) -> None:
@@ -987,6 +1038,9 @@ class VoiceAgent:
             if self.holding:
                 data = bytes(indata)
                 self.mic_level = level_from_pcm(indata)
+                self.hold_blocks += 1
+                if not self.hold_heard and np.any(indata):
+                    self.hold_heard = True
             else:
                 # Silence rather than nothing: the session runs on an audio
                 # clock, and a stalled inbound stream stops it responding.

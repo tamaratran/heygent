@@ -73,7 +73,7 @@ from conductor.boss_session import BossSessionStore, render_timeline
 from conductor.pty_manager import PtyManagerBackend
 from conductor.global_conductor import GlobalConductor
 from conductor.gui_permissions import (ask_for_missing_grants,
-                                       explain_refusal)
+                                       explain_refusal, microphone_denied)
 from conductor.plain_text import plain_text
 from conductor.notifications import (NotificationService,
                                      TaskNotification, concise)
@@ -709,11 +709,22 @@ async def main() -> int:
     # clicks vanish. macOS never asks on its own; the conductor opens the
     # pane for each grant this terminal lacks, once, and says which apps
     # to add. Nothing at all when everything is granted.
-    await asyncio.to_thread(
+    asks = await asyncio.to_thread(
         ask_for_missing_grants, home,
         worker_app="cmux" if chosen_surface(args.worker_surface) == "cmux"
         else None,
         dialog=None if dialogs.has_terminal() else dialogs.alert)
+    # A Microphone grant macOS has denied is not one the voice can do
+    # without: the stream opens and delivers zeros, so the app looks
+    # alive and hears nothing. Asked once above like the rest; every
+    # launch after that it is a refusal, said before the app quits.
+    if await asyncio.to_thread(microphone_denied) \
+            and all(ask.grant != "microphone" for ask in asks):
+        await asyncio.to_thread(
+            explain_refusal, "microphone",
+            dialog=None if dialogs.has_terminal() else dialogs.alert)
+        instance.release(home, current_run())
+        return 1
     surface = await preflight_surface(args.worker_surface,
                                       install_missing=not args.no_install_deps)
     conductor = build_conductor(home, search_roots,
