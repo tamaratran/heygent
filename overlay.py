@@ -1425,7 +1425,7 @@ class Controller(NSObject):
     def _add_quit_item(self, menu) -> None:
         menu.addItem_(NSMenuItem.separatorItem())
         item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Quit Voice Agent", "quitOverlay:", "q")
+            "Quit heygent", "quitOverlay:", "q")
         item.setTarget_(self)
         menu.addItem_(item)
 

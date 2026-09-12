@@ -29,7 +29,7 @@ if [ -d "$APP_DIR/.git" ]; then
   say "Updating $APP_DIR ..."
   git -C "$APP_DIR" pull --ff-only
 elif [ -f "$APP_DIR/conduct.sh" ]; then
-  # Unpacked there by Voice Agent.app, which keeps it current itself.
+  # Unpacked there by heygent.app, which keeps it current itself.
   say "Using the app already under $APP_DIR"
 else
   say "Cloning into $APP_DIR ..."

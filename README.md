@@ -1,9 +1,9 @@
 # heygent
 
-**[Download for Mac](https://github.com/tamaratran/heygent/releases/latest/download/Voice-Agent.zip)** (Apple silicon)
+**[Download for Mac](https://github.com/tamaratran/heygent/releases/latest/download/heygent.zip)** (Apple silicon)
 
-1. Double-click `Voice-Agent.zip` to unzip it.
-2. Drag `Voice Agent.app` into your **Applications** folder.
+1. Double-click `heygent.zip` to unzip it.
+2. Drag `heygent.app` into your **Applications** folder.
 3. Open it. macOS shows its standard "downloaded from the Internet" prompt
    saying Apple checked it - click **Open**.
 

@@ -1,6 +1,6 @@
-"""voice-agent as a real macOS application.
+"""heygent as a real macOS application.
 
-Builds `Voice Agent.app` - the bundle Finder, the Dock and Spotlight
+Builds `heygent.app` - the bundle Finder, the Dock and Spotlight
 know - around the repo's own launcher. The bundle is a shell, not a
 copy: its executable execs `conduct.sh` where the repo lives, so a
 `git pull` updates the app with no rebuild. What the bundle adds is
@@ -10,7 +10,7 @@ to, instead of "Python".
 
 Build it:
 
-    python3 -m conductor.app_bundle              # ./dist/Voice Agent.app
+    python3 -m conductor.app_bundle              # ./dist/heygent.app
     python3 -m conductor.app_bundle --install    # /Applications
     python3 -m conductor.app_bundle --sign "Developer ID Application: ..."
     python3 -m conductor.app_bundle --standalone  # for other Macs
@@ -40,8 +40,8 @@ import tempfile
 import time
 from pathlib import Path
 
-APP_NAME = "Voice Agent"
-BUNDLE_ID = "ai.voice-agent.conductor"
+APP_NAME = "heygent"
+BUNDLE_ID = "ai.heygent.conductor"
 
 # Finder launches with almost no PATH; the launcher restores the places
 # conduct.sh's tools (uv, tmux, claude) actually live.
@@ -183,17 +183,17 @@ def info_plist(repo: Path) -> dict:
         "CFBundleName": APP_NAME,
         "CFBundleDisplayName": APP_NAME,
         "CFBundleIdentifier": BUNDLE_ID,
-        "CFBundleExecutable": "voice-agent",
+        "CFBundleExecutable": "heygent",
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": "1.0",
         "CFBundleVersion": "1",
-        "CFBundleIconFile": "voice-agent.icns",
+        "CFBundleIconFile": "heygent.icns",
         "LSMinimumSystemVersion": "12.0",
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription":
-            "Voice Agent listens while you hold the push-to-talk key.",
+            "heygent listens while you hold the push-to-talk key.",
         "NSAppleEventsUsageDescription":
-            "Voice Agent raises its own window and terminal sessions.",
+            "heygent raises its own window and terminal sessions.",
     }
 
 
@@ -207,7 +207,7 @@ def make_icns(png: Path, icns: Path) -> bool:
     if sips is None or iconutil is None:
         return False
     with tempfile.TemporaryDirectory() as scratch:
-        iconset = Path(scratch) / "voice-agent.iconset"
+        iconset = Path(scratch) / "heygent.iconset"
         iconset.mkdir()
         for size in (16, 32, 64, 128, 256, 512, 1024):
             for scale, suffix in ((1, ""), (2, "@2x")):
@@ -229,7 +229,7 @@ def make_icns(png: Path, icns: Path) -> bool:
 
 def build_bundle(repo: Path, dest: Path, identity: str = "-",
                  standalone: bool = False) -> Path:
-    """Assemble `Voice Agent.app` under dest and return its path.
+    """Assemble `heygent.app` under dest and return its path.
 
     `identity` is what codesign signs with: "-" (ad-hoc) is enough for
     an app that stays on this Mac; a "Developer ID Application" identity
@@ -252,8 +252,8 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
     with (contents / "Info.plist").open("wb") as handle:
         plistlib.dump(info_plist(repo), handle)
 
-    executable = macos / "voice-agent"
-    script = macos / "voice-agent.sh"
+    executable = macos / "heygent"
+    script = macos / "heygent.sh"
     for stale in (executable, script):
         stale.unlink(missing_ok=True)
     if compile_stub(STUB.replace("{script}", script.name), executable):
@@ -271,7 +271,7 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
     launcher.chmod(0o755)
 
     make_icns(repo / "assets" / "icon.png",
-              resources / "voice-agent.icns")
+              resources / "heygent.icns")
 
     # Without any signature Gatekeeper on Apple silicon refuses to
     # launch it.
@@ -290,7 +290,7 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="build Voice Agent.app around this repo")
+        description="build heygent.app around this repo")
     parser.add_argument("--install", action="store_true",
                         help="build into /Applications instead of ./dist")
     parser.add_argument("--dest", type=Path, default=None,
