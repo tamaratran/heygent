@@ -57,7 +57,8 @@ from pathlib import Path
 import boss
 import voice_agent
 from voice_agent import (OPENAI_KEYS_URL, HotkeyListener, Ui, VoiceAgent,
-                         ask_for_api_key, load_env, log, withhold_api_key)
+                         ask_for_api_key, find_api_key, load_env, log,
+                         withhold_api_key)
 
 from conductor import (JsonlSink, LoggingSink, ObservabilityBus,
                        application_log, configure_logging, current_log_path,
@@ -678,7 +679,7 @@ async def main() -> int:
     held = True
 
     load_env()
-    api_key = (os.environ.get("OPENAI_API_KEY", "")
+    api_key = (await asyncio.to_thread(find_api_key)
                or await asyncio.to_thread(ask_for_api_key))
     withhold_api_key()
     if not api_key:

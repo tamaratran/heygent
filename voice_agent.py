@@ -56,6 +56,7 @@ import base64
 import ctypes
 import ctypes.util
 import getpass
+import hashlib
 import json
 import math
 import os
@@ -76,7 +77,7 @@ import numpy as np
 import sounddevice as sd
 
 import boss
-from conductor import dialogs
+from conductor import dialogs, keystore
 from conductor.manager import VERBATIM_FOOTER, VERBATIM_HEADER
 from conductor.observability import (JsonlSink, LoggingSink,
                                      ObservabilityBus, ObservabilityEvent,
@@ -364,11 +365,14 @@ def load_env() -> None:
 OPENAI_KEYS_URL = "https://platform.openai.com/api-keys"
 OPENAI_BILLING_URL = "https://platform.openai.com/settings/organization/billing"
 OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
-KEY_PROMPT = ("heygent needs an OpenAI API key to hear and speak.\n\n"
-              f"Create one at {OPENAI_KEYS_URL} (the account needs credit, "
-              "and access to GPT Live), then paste it below. It is saved to "
-              "~/.voice-conductor/app/.env and never leaves this Mac except "
-              "to talk to OpenAI.")
+KEY_PROMPT = ("heygent needs your OpenAI API key to hear and speak.\n\n"
+              "Paste it below. Get a key opens platform.openai.com, where "
+              "you can create one; the account needs credit and access to "
+              "GPT Live.\n\n"
+              "The key is kept in your macOS Keychain and only ever sent "
+              "to OpenAI.")
+KEY_BUTTON = "Get a key"
+KEY_STORAGE = "the Keychain" if keystore.available() else ".env"
 # An error that is a decision OpenAI made about this key or account, not
 # the network: a new socket gets the same answer, so it is not retried.
 REFUSAL_CODES = {
@@ -386,8 +390,58 @@ REFUSAL_URLS = {
 KEY_REFUSED = "key refused"
 
 
+def find_api_key() -> str:
+    """A key that is already on this Mac, put into os.environ: what the
+    environment or .env gave, the Keychain, or the user's login shell
+    (an export in ~/.zshrc, which a Finder launch never ran). A key found
+    in the shell is kept in the Keychain so the shell is not asked again.
+    "" when there is none anywhere."""
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if key:
+        return key
+    key = keystore.load()
+    where = "the Keychain"
+    if not key:
+        key = keystore.from_login_shell()
+        where = "the login shell"
+        if key and _was_refused(key):
+            application_log("voice", "app.api_key_shell_refused",
+                            "the login shell's OPENAI_API_KEY is the one "
+                            "OpenAI refused; not using it",
+                            severity="warning")
+            key = ""
+        elif key:
+            keystore.save(key)
+    if key:
+        os.environ["OPENAI_API_KEY"] = key
+        application_log("voice", "app.api_key_found",
+                        f"the OpenAI key was found in {where}")
+    return key
+
+
+def _refused_marker() -> Path:
+    return HERE / ".openai-key-refused"
+
+
+def _digest(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def _was_refused(key: str) -> bool:
+    marker = _refused_marker()
+    return marker.exists() and marker.read_text().strip() == _digest(key)
+
+
 def save_api_key(key: str) -> None:
+    """Keep the key in the Keychain; in .env only where there is no
+    Keychain to keep it in. Any key .env held goes, either way."""
+    if key:
+        _refused_marker().unlink(missing_ok=True)
+        if keystore.save(key):
+            key = ""
     path = HERE / ".env"
+    if not key and not path.exists():
+        return
     existing = path.read_text() if path.exists() else ""
     lines = [line for line in existing.splitlines()
              if not line.strip().startswith("OPENAI_API_KEY")]
@@ -396,9 +450,14 @@ def save_api_key(key: str) -> None:
     path.write_text("\n".join(lines) + "\n" if lines else "")
 
 
-def forget_api_key() -> None:
+def forget_api_key(key: str = "") -> None:
     """Drop a key OpenAI refused, so the next launch asks for one instead
-    of failing the same way."""
+    of failing the same way. The refused key is remembered by digest so
+    a login shell still exporting it is not believed again."""
+    key = key or os.environ.get("OPENAI_API_KEY") or keystore.load()
+    if key:
+        _refused_marker().write_text(_digest(key) + "\n")
+    keystore.forget()
     if (HERE / ".env").exists():
         save_api_key("")
     os.environ.pop("OPENAI_API_KEY", None)
@@ -467,11 +526,15 @@ def ask_for_api_key(check=None) -> str:
             print(f"An OpenAI API key is needed ({OPENAI_KEYS_URL}).")
             try:
                 key = getpass.getpass(
-                    "Paste it here (hidden, saved to .env): ").strip()
+                    f"Paste it here (hidden, saved to {KEY_STORAGE}): "
+                ).strip()
             except (EOFError, KeyboardInterrupt):
                 return ""
         else:
-            key = dialogs.ask_secret(KEY_PROMPT)
+            key = dialogs.ask_secret(KEY_PROMPT, button=KEY_BUTTON)
+            if key == f"button:{KEY_BUTTON}":
+                dialogs.open_url(OPENAI_KEYS_URL)
+                continue
         if not key:
             return ""
         rejected = check(key)
@@ -484,7 +547,7 @@ def ask_for_api_key(check=None) -> str:
     os.environ["OPENAI_API_KEY"] = key
     application_log("voice", "app.api_key_saved",
                     "the OpenAI key was taken from the user and saved to "
-                    ".env")
+                    f"{KEY_STORAGE}")
     return key
 
 
@@ -780,7 +843,7 @@ class VoiceAgent:
                         severity="error",
                         key_forgotten=self.refused_key)
         if self.refused_key:
-            forget_api_key()
+            forget_api_key(self.api_key)
         await asyncio.to_thread(dialogs.tell, self.refusal)
         self.ui.request_quit("the OpenAI key was refused")
 
@@ -1908,7 +1971,7 @@ async def main() -> int:
                     no_hotkey=args.no_hotkey)
 
     load_env()
-    api_key = (os.environ.get("OPENAI_API_KEY", "")
+    api_key = (await asyncio.to_thread(find_api_key)
                or await asyncio.to_thread(ask_for_api_key))
     withhold_api_key()
     if not api_key:
