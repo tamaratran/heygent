@@ -137,6 +137,21 @@ class LaunchersTest(unittest.TestCase):
         body = source[source.index("class ConductorVoice"):]
         self.assertIn("async def _watch_overlay", body)
 
+    def test_dock_quit_ends_the_run_but_the_x_only_hides(self) -> None:
+        """The Boss window's process is the app in the Dock: Quit there
+        ends everything; closing the window keeps the conductor running
+        (its x hides, the Dock icon brings it back)."""
+        conduct = (HERE / "conduct.py").read_text()
+        self.assertIn('ui.request_quit("the Boss window quit")', conduct)
+        body = conduct[conduct.index("async def quit_with_window"):]
+        self.assertLess(body.index("await process.wait()"),
+                        body.index("ui.request_quit"))
+        app_mac = (HERE / "conductor" / "app_mac.py").read_text()
+        close = app_mac[app_mac.index("def windowShouldClose_"):]
+        close = close[:close.index("\n    def ", 10)]
+        self.assertIn("self.window.orderOut_(None)", close)
+        self.assertIn("return False", close)
+
     def test_the_overlay_reports_before_it_leaves(self) -> None:
         source = (HERE / "overlay.py").read_text()
         body = source[source.index("def quitOverlay_"):]

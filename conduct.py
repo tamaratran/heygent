@@ -724,6 +724,7 @@ async def main() -> int:
     # it - never cmux, which the window replaced (assigned below, after
     # the window opens).
     boss_page, boss_window = None, None
+    window_watcher: asyncio.Task | None = None
 
     async def focus_session(task_id: str) -> None:
         """Where a notification's or toast's deep link lands."""
@@ -1206,6 +1207,17 @@ async def main() -> int:
                 await window_bridge.start(
                     uv, HERE / "conductor" / "app_mac.py", home / "boss")
                 boss_window = window_bridge.process
+
+                async def quit_with_window(process) -> None:
+                    """The window's process is the app in the Dock, and
+                    Quit there (or a crash) takes it away for good - the
+                    x only hides it. With no way back to the window, the
+                    whole run ends with it."""
+                    await process.wait()
+                    ui.request_quit("the Boss window quit")
+
+                window_watcher = asyncio.create_task(
+                    quit_with_window(boss_window))
             else:
                 await boss_page.start()
                 boss_window = await asyncio.create_subprocess_exec(
@@ -1340,6 +1352,8 @@ async def main() -> int:
         sweeper.cancel()
         for reader in stderr_readers:
             reader.cancel()
+        if window_watcher is not None:
+            window_watcher.cancel()
         stall_monitor.cancel()
         notifications.close()
         if hasattr(conductor.manager, "close"):
