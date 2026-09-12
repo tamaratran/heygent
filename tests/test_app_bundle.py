@@ -1,5 +1,7 @@
 """The .app bundle builder: a real macOS application around conduct.sh."""
 import plistlib
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,6 +43,26 @@ class TheBundle(unittest.TestCase):
         self.assertIn(str(self.repo / "conduct.sh"), body)
         self.assertTrue(launcher.stat().st_mode & 0o111,
                         "the executable is not executable")
+
+    @unittest.skipUnless(shutil.which("cc"), "needs a C compiler")
+    def test_with_a_compiler_the_executable_is_a_mach_o_stub(self):
+        with mock.patch.object(app_bundle, "make_icns", return_value=False):
+            app = app_bundle.build_bundle(self.repo, self.dest)
+        macos = app / "Contents" / "MacOS"
+        with (macos / "voice-agent").open("rb") as handle:
+            self.assertIn(handle.read(4), (b"\xcf\xfa\xed\xfe",
+                                           b"\xca\xfe\xba\xbe"),
+                          "the executable is not Mach-O")
+        script = macos / "voice-agent.sh"
+        self.assertIn(str(self.repo / "conduct.sh"), script.read_text())
+        self.assertTrue(script.stat().st_mode & 0o111)
+        # A run of the stub execs the script: give it a script that
+        # leaves a mark, and check the mark.
+        mark = Path(self.scratch.name) / "ran"
+        script.write_text(f"#!/bin/bash\ntouch '{mark}'\n")
+        subprocess.run([str(macos / "voice-agent")], check=True,
+                       timeout=30)
+        self.assertTrue(mark.is_file())
 
     def test_a_repo_without_conduct_sh_is_refused(self):
         bare = Path(self.scratch.name) / "bare"
