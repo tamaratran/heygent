@@ -219,7 +219,7 @@ class TheConductorProcess(unittest.TestCase):
         for name in ("conduct.py", "voice_agent.py"):
             source = (ROOT / name).read_text()
             body = source[source.index("async def main("):]
-            read = body.index(f'os.environ.get("{NAME}"')
+            read = body.index("find_api_key)")
             withheld = body.find("withhold_api_key()", read)
             self.assertNotEqual(withheld, -1,
                                 f"{name} never withholds the key")
