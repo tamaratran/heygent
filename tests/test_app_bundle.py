@@ -84,6 +84,57 @@ class TheBundle(unittest.TestCase):
                          "the standalone launcher points at this checkout")
         self.assertIn("Resources/app", body)
 
+    def test_the_standalone_first_run_installs_quietly(self):
+        """No Terminal window dumped on the user: with a tool missing the
+        launcher runs install.sh itself (behind a dialog) and then
+        conduct.sh; with everything there, conduct.sh alone. The OpenAI
+        key is conduct.py's to ask for, not a reason to open Terminal."""
+        home = Path(self.scratch.name) / "home"
+        app_dir = home / "app"
+        app_dir.mkdir(parents=True)
+        log = Path(self.scratch.name) / "calls.log"
+        (app_dir / "install.sh").write_text(
+            f"#!/bin/bash\necho install >> '{log}'\n")
+        (app_dir / "conduct.sh").write_text(
+            f"#!/bin/bash\necho conduct >> '{log}'\n")
+        (app_dir / app_bundle.STAMP).write_text("v")
+        for name in ("install.sh", "conduct.sh"):
+            (app_dir / name).chmod(0o755)
+        fake_bin = Path(self.scratch.name) / "bin"
+        fake_bin.mkdir()
+        for tool in ("uv", "tmux", "claude", "osascript"):
+            (fake_bin / tool).write_text(
+                f"#!/bin/bash\necho {tool} >> '{log}'\n")
+            (fake_bin / tool).chmod(0o755)
+        bundle = Path(self.scratch.name) / "heygent.app" / "Contents"
+        (bundle / "Resources" / "app").mkdir(parents=True)
+        (bundle / "Resources" / "app" / app_bundle.STAMP).write_text("v")
+        (bundle / "MacOS").mkdir()
+        launcher = bundle / "MacOS" / "heygent"
+        # The launcher hard-codes Homebrew's bin, where this machine may
+        # well have a real tmux; the fake bin stands in for it.
+        script = app_bundle.STANDALONE_LAUNCHER.replace(
+            "{stamp}", app_bundle.STAMP).replace(
+            "/opt/homebrew/bin:/usr/local/bin", str(fake_bin))
+        launcher.write_text(script)
+        env = {"HOME": str(home), "VOICE_CONDUCTOR_HOME": str(home),
+               "PATH": "/usr/bin:/bin"}
+
+        def run():
+            log.write_text("")
+            subprocess.run(["bash", str(launcher)], env=env, check=True,
+                           timeout=30)
+            return log.read_text().split()
+
+        self.assertEqual(run(), ["conduct"], "everything there, no fuss")
+        (fake_bin / "tmux").unlink()
+        calls = run()
+        self.assertIn("install", calls)
+        self.assertEqual(calls[-1], "conduct")
+        quiet_path = script.split("missing=")[1].split("install.sh failed")[0]
+        self.assertNotIn("Terminal", quiet_path,
+                         "Terminal is for a failed install only")
+
     def test_a_repo_without_conduct_sh_is_refused(self):
         bare = Path(self.scratch.name) / "bare"
         bare.mkdir()

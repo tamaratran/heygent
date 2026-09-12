@@ -7,6 +7,13 @@
 3. Open it. macOS shows its standard "downloaded from the Internet" prompt
    saying Apple checked it - click **Open**.
 
-The first launch opens a Terminal window that installs what the app needs
-and asks for your **OpenAI API key**. After that, opening the app just
-starts it: hold **Fn**, talk, let go.
+The first launch installs what the app needs (a minute or two), then asks
+for your **OpenAI API key** and, if Claude Code is not signed in on your
+Mac, to run `claude auth login`. It also asks for the macOS permissions it
+uses (Microphone, Input Monitoring for the Fn key; Accessibility and Screen
+Recording for computer-use tasks) and says which switch to turn on. After
+that, opening the app just starts it: hold **Fn**, talk, let go.
+
+You need an [OpenAI API key](https://platform.openai.com/api-keys) on an
+account with credit (it uses GPT Live) and a Claude account (Pro/Max, or an
+Anthropic API key with credit) for the assistant behind it.

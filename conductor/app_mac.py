@@ -29,7 +29,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import plistlib
 import sys
+import sysconfig
 import threading
 import time
 from pathlib import Path
@@ -508,12 +510,73 @@ def build_menu(app) -> None:
     app.setMainMenu_(bar)
 
 
+APP_NAME = "heygent"
+WINDOW_BUNDLE_ID = "ai.heygent.window"
+_RELAUNCHED = "HEYGENT_WINDOW_RELAUNCHED"
+
+
+def window_bundle(home: Path) -> Path:
+    return home / f"{APP_NAME}-window.app"
+
+
+def relaunch_named(home: Path, env=None, argv=None,
+                   execve=os.execve) -> bool:
+    """Start over as a process the Dock calls heygent.
+
+    The Dock, the app switcher and the menu bar name a process after the
+    bundle its executable sits in - and a uv script's executable is
+    python3.13, so that is what the tooltip said under our own icon.
+    Setting CFBundleName in the running process does not reach them.
+    What does is the executable's path: a symlink to the very same
+    interpreter, inside a minimal heygent-window.app in the conductor
+    home, and Launch Services reads that bundle's Info.plist. The venv
+    is kept by putting its site-packages on PYTHONPATH, since the
+    interpreter no longer sits next to its pyvenv.cfg. True when the
+    exec was made (it does not return then); False when this is already
+    that process, another platform, or the bundle could not be made.
+    """
+    env = dict(os.environ if env is None else env)
+    argv = sys.argv if argv is None else argv
+    if sys.platform != "darwin" or env.get(_RELAUNCHED):
+        return False
+    interpreter = Path(sys.executable).resolve()
+    bundle = window_bundle(home)
+    macos = bundle / "Contents" / "MacOS"
+    link = macos / APP_NAME
+    try:
+        macos.mkdir(parents=True, exist_ok=True)
+        (bundle / "Contents" / "Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleName": APP_NAME,
+            "CFBundleDisplayName": APP_NAME,
+            "CFBundleIdentifier": WINDOW_BUNDLE_ID,
+            "CFBundleExecutable": APP_NAME,
+            "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": "1.0",
+            "NSHighResolutionCapable": True,
+        }))
+        if link.is_symlink() and os.readlink(link) != str(interpreter):
+            link.unlink()                # a Python upgrade since last time
+        if not link.is_symlink():
+            link.symlink_to(interpreter)
+    except OSError as exc:
+        print(f"window: could not make {bundle}: {exc}", file=sys.stderr,
+              flush=True)
+        return False
+    site = sysconfig.get_paths()["purelib"]
+    env["PYTHONPATH"] = os.pathsep.join(
+        [site] + [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p])
+    env[_RELAUNCHED] = "1"
+    execve(str(link), [str(link)] + list(argv), env)
+    return True
+
+
 def call_it_voice_agent() -> None:
-    """The menu bar names the process; a script's is "Python"."""
+    """The menu bar's app menu names the process; a script's is
+    "Python". (The Dock does not read this: see relaunch_named.)"""
     from Foundation import NSBundle
     info = NSBundle.mainBundle().infoDictionary()
     if info is not None:
-        info["CFBundleName"] = "heygent"
+        info["CFBundleName"] = APP_NAME
 
 
 def set_app_icon(app) -> None:
@@ -546,6 +609,7 @@ def main(argv: list[str] | None = None) -> int:
     if "--stdio" in argv:
         argv = [a for a in argv if a != "--stdio"]
     cwd = os.path.abspath(argv[0]) if argv else os.getcwd()
+    relaunch_named(Path.home() / ".voice-conductor")
     backend = BridgeBackend(page) if page \
         else RemoteBackend(url) if url \
         else Backend(cwd, Path.home() / ".voice-conductor", kind)

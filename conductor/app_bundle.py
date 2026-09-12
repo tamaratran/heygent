@@ -19,8 +19,11 @@ A standalone bundle carries a copy of the repo in Contents/Resources/app
 and, on launch, unpacks it to ~/.voice-conductor/app (the same place
 install.sh puts a checkout, and left alone if one is there) before
 running conduct.sh from that copy; nothing is ever written inside the
-signed bundle. A first run - a tool or the OpenAI key missing - happens
-in Terminal, where install.sh and conduct.sh can ask their questions.
+signed bundle. A first run with a tool missing runs install.sh in the
+background behind a "setting up" dialog; the OpenAI key, the Claude
+login and the permissions are asked for by conduct.py itself, in
+dialogs. Terminal is offered only when the install fails, so the errors
+can be seen.
 
 The bundle's executable is a small Mach-O stub that execs the launcher
 script beside it: LaunchServices (Finder, `open`, the Dock) refuses to
@@ -76,25 +79,43 @@ if [ ! -d "$APP_DIR/.git" ]; then
   fi
 fi
 
-first_run=""
+missing=""
 for tool in uv tmux claude; do
-  command -v "$tool" >/dev/null 2>&1 || first_run="$tool"
+  command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
 done
-grep -q '^OPENAI_API_KEY=..*' "$APP_DIR/.env" 2>/dev/null || first_run="${first_run:-key}"
 
-if [ -n "$first_run" ]; then
-  echo "first run ($first_run missing): continuing in Terminal"
-  osascript - "$APP_DIR" <<'EOF'
+if [ -n "$missing" ]; then
+  # install.sh needs no typing in the usual case (uv, tmux via Homebrew,
+  # Claude Code all install unattended), so it runs here, behind a
+  # dialog that says what is happening and goes away when it is done.
+  echo "first run: installing$missing"
+  osascript -e 'display dialog "heygent is setting up: installing what it needs (uv, tmux, Claude Code). This takes a minute or two, and heygent opens by itself when it is done." with title "heygent" buttons {"OK"} default button "OK" with icon note giving up after 1800' >/dev/null 2>&1 &
+  waiting=$!
+  if bash "$APP_DIR/install.sh" >"$LOG_DIR/install.log" 2>&1; then
+    kill "$waiting" 2>/dev/null
+  else
+    kill "$waiting" 2>/dev/null
+    echo "install.sh failed; see $LOG_DIR/install.log"
+    # The errors are in the log; Terminal is where they can be read and
+    # the install retried by hand.
+    osascript - "$APP_DIR" "$LOG_DIR/install.log" "$(tail -n 6 "$LOG_DIR/install.log" | perl -pe 's/\\e\\[[0-9;]*m//g')" <<'EOF'
 on run argv
   set appDir to item 1 of argv
-  set cmd to "export PATH=\\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\\"; bash " & quoted form of (appDir & "/install.sh") & " && exec " & quoted form of (appDir & "/conduct.sh")
-  tell application "Terminal"
-    activate
-    do script cmd
-  end tell
+  set logPath to item 2 of argv
+  set tailText to item 3 of argv
+  set msg to "heygent could not finish setting up." & return & return & tailText & return & return & "The full log is at " & logPath & ". Open Terminal to run the install where you can see it, then open heygent again."
+  set answer to display dialog msg with title "heygent" buttons {"Quit", "Open Terminal"} default button "Open Terminal" with icon caution
+  if button returned of answer is "Open Terminal" then
+    set cmd to "export PATH=\\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\\"; bash " & quoted form of (appDir & "/install.sh")
+    tell application "Terminal"
+      activate
+      do script cmd
+    end tell
+  end if
 end run
 EOF
-  exit $?
+    exit 1
+  fi
 fi
 
 exec "$APP_DIR/conduct.sh"

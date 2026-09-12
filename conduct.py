@@ -56,14 +56,15 @@ from pathlib import Path
 
 import boss
 import voice_agent
-from voice_agent import (HotkeyListener, Ui, VoiceAgent, ask_for_api_key,
-                         load_env, log, withhold_api_key)
+from voice_agent import (OPENAI_KEYS_URL, HotkeyListener, Ui, VoiceAgent,
+                         ask_for_api_key, load_env, log, withhold_api_key)
 
 from conductor import (JsonlSink, LoggingSink, ObservabilityBus,
                        application_log, configure_logging, current_run,
                        drain_subprocess_stderr, instance,
                        install_asyncio_exception_handler,
                        start_loop_stall_monitor)
+from conductor import claude_auth, dialogs
 from conductor.claude_manager import ClaudeManagerBackend
 from conductor.boss_bridge import BossBridge
 from conductor.conductor_mcp import ConductorMcp
@@ -684,10 +685,16 @@ async def main() -> int:
                or await asyncio.to_thread(ask_for_api_key))
     withhold_api_key()
     if not api_key:
-        print("OPENAI_API_KEY is empty - paste your key into .env",
-              file=sys.stderr)
+        dialogs.tell("heygent needs an OpenAI API key and none was given. "
+                     f"Open it again to paste one, from {OPENAI_KEYS_URL}.")
         application_log("conductor", "app.missing_api_key",
                         "OPENAI_API_KEY is empty", severity="error")
+        instance.release(home, current_run())
+        return 1
+    # The Boss is a Claude Code session: without a login it opens on the
+    # sign-in screen in a window nobody is looking at, and the voice
+    # relays questions to it for ever. Asked now, and said plainly.
+    if not await asyncio.to_thread(claude_auth.ensure_logged_in):
         instance.release(home, current_run())
         return 1
 
@@ -707,7 +714,8 @@ async def main() -> int:
     await asyncio.to_thread(
         ask_for_missing_grants, home,
         worker_app="cmux" if chosen_surface(args.worker_surface) == "cmux"
-        else None)
+        else None,
+        dialog=None if dialogs.has_terminal() else dialogs.alert)
     surface = await preflight_surface(args.worker_surface,
                                       install_missing=not args.no_install_deps)
     conductor = build_conductor(home, search_roots,

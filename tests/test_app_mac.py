@@ -151,5 +151,55 @@ class TheWindowsWebView(unittest.TestCase):
                          ["/tmp/a b.png", "/tmp/b.md"])
 
 
+@unittest.skipIf(app_mac is None, "AppKit and WebKit are not installed")
+class NamedInTheDock(unittest.TestCase):
+    """The Dock's tooltip under our icon said python3.13: a process is
+    named after the bundle its executable is in, and a uv script's
+    executable is the interpreter. So the window starts over through a
+    symlink to that same interpreter inside a heygent-window.app."""
+
+    def test_the_window_relaunches_as_heygent(self):
+        import plistlib
+        import sys
+        calls = []
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            done = app_mac.relaunch_named(
+                home, env={"PATH": "/usr/bin", "PYTHONPATH": "/x"},
+                argv=["conductor/app_mac.py", "--stdio"],
+                execve=lambda *a: calls.append(a))
+            self.assertTrue(done)
+            path, argv, env = calls[0]
+            link = home / "heygent-window.app" / "Contents" / "MacOS" / "heygent"
+            self.assertEqual(path, str(link))
+            self.assertEqual(argv, [str(link), "conductor/app_mac.py",
+                                    "--stdio"])
+            self.assertEqual(Path(link).resolve(),
+                             Path(sys.executable).resolve(),
+                             "the very same interpreter")
+            info = plistlib.loads(
+                (home / "heygent-window.app" / "Contents" / "Info.plist")
+                .read_bytes())
+            self.assertEqual(info["CFBundleName"], "heygent")
+            self.assertEqual(info["CFBundleExecutable"], "heygent")
+            self.assertEqual(env["HEYGENT_WINDOW_RELAUNCHED"], "1")
+            self.assertTrue(env["PYTHONPATH"].endswith(":/x"),
+                            "the venv's site-packages come first")
+            self.assertIn("site-packages", env["PYTHONPATH"].split(":")[0])
+            # The relaunched process must not relaunch again.
+            self.assertFalse(app_mac.relaunch_named(
+                home, env=env, argv=[],
+                execve=lambda *a: self.fail("relaunched twice")))
+            self.assertEqual(len(calls), 1)
+
+    def test_a_home_that_cannot_be_written_stays_python(self):
+        with tempfile.TemporaryDirectory() as folder:
+            blocker = Path(folder) / "file"
+            blocker.write_text("")
+            self.assertFalse(app_mac.relaunch_named(
+                blocker / "home", env={},
+                execve=lambda *a: self.fail("exec with no bundle")))
+
+
 if __name__ == "__main__":
     unittest.main()
