@@ -96,6 +96,7 @@ _LINK, _LINK_END = "\x1b]8;;{url}\x1b\\", "\x1b]8;;\x1b\\"
 # macOS hands every process the bundle id of the app it was launched
 # from, which is exactly the app the grant is attributed to.
 APP_NAMES = {
+    "ai.heygent.conductor": "heygent",
     "com.apple.Terminal": "Terminal",
     "com.googlecode.iterm2": "iTerm2",
     "com.mitchellh.ghostty": "Ghostty",

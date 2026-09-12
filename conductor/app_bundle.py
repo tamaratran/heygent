@@ -1,6 +1,6 @@
-"""voice-agent as a real macOS application.
+"""heygent as a real macOS application.
 
-Builds `Voice Agent.app` - the bundle Finder, the Dock and Spotlight
+Builds `heygent.app` - the bundle Finder, the Dock and Spotlight
 know - around the repo's own launcher. The bundle is a shell, not a
 copy: its executable execs `conduct.sh` where the repo lives, so a
 `git pull` updates the app with no rebuild. What the bundle adds is
@@ -10,9 +10,17 @@ to, instead of "Python".
 
 Build it:
 
-    python3 -m conductor.app_bundle              # ./dist/Voice Agent.app
+    python3 -m conductor.app_bundle              # ./dist/heygent.app
     python3 -m conductor.app_bundle --install    # /Applications
     python3 -m conductor.app_bundle --sign "Developer ID Application: ..."
+    python3 -m conductor.app_bundle --standalone  # for other Macs
+
+A standalone bundle carries a copy of the repo in Contents/Resources/app
+and, on launch, unpacks it to ~/.voice-conductor/app (the same place
+install.sh puts a checkout, and left alone if one is there) before
+running conduct.sh from that copy; nothing is ever written inside the
+signed bundle. A first run - a tool or the OpenAI key missing - happens
+in Terminal, where install.sh and conduct.sh can ask their questions.
 
 The bundle's executable is a small Mach-O stub that execs the launcher
 script beside it: LaunchServices (Finder, `open`, the Dock) refuses to
@@ -29,10 +37,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
-APP_NAME = "Voice Agent"
-BUNDLE_ID = "ai.voice-agent.conductor"
+APP_NAME = "heygent"
+BUNDLE_ID = "ai.heygent.conductor"
 
 # Finder launches with almost no PATH; the launcher restores the places
 # conduct.sh's tools (uv, tmux, claude) actually live.
@@ -44,6 +53,54 @@ LOG_DIR="$HOME/.voice-conductor/logs"
 mkdir -p "$LOG_DIR"
 exec "{conduct}" >>"$LOG_DIR/app-launch.log" 2>&1
 """
+
+STANDALONE_LAUNCHER = """#!/bin/bash
+# The app's launcher, standalone flavour: the repo travels inside the
+# bundle and runs from a copy under the conductor home.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PAYLOAD="$HERE/../Resources/app"
+CONDUCTOR_HOME="${VOICE_CONDUCTOR_HOME:-$HOME/.voice-conductor}"
+APP_DIR="$CONDUCTOR_HOME/app"
+LOG_DIR="$CONDUCTOR_HOME/logs"
+mkdir -p "$LOG_DIR"
+exec >>"$LOG_DIR/app-launch.log" 2>&1
+
+# A git checkout there (install.sh's) is the user's; leave it. Anything
+# else is ours: refresh it whenever the bundle carries a different
+# version. .env is never in the bundle, so it survives the refresh.
+if [ ! -d "$APP_DIR/.git" ]; then
+  if ! cmp -s "$PAYLOAD/{stamp}" "$APP_DIR/{stamp}"; then
+    mkdir -p "$APP_DIR"
+    ditto "$PAYLOAD" "$APP_DIR"
+  fi
+fi
+
+first_run=""
+for tool in uv tmux claude; do
+  command -v "$tool" >/dev/null 2>&1 || first_run="$tool"
+done
+grep -q '^OPENAI_API_KEY=..*' "$APP_DIR/.env" 2>/dev/null || first_run="${first_run:-key}"
+
+if [ -n "$first_run" ]; then
+  echo "first run ($first_run missing): continuing in Terminal"
+  osascript - "$APP_DIR" <<'EOF'
+on run argv
+  set appDir to item 1 of argv
+  set cmd to "export PATH=\\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\\"; bash " & quoted form of (appDir & "/install.sh") & " && exec " & quoted form of (appDir & "/conduct.sh")
+  tell application "Terminal"
+    activate
+    do script cmd
+  end tell
+end run
+EOF
+  exit $?
+fi
+
+exec "$APP_DIR/conduct.sh"
+"""
+
+STAMP = ".bundle-version"
 
 # The Mach-O executable: exec the launcher script next to itself.
 STUB = r"""#include <libgen.h>
@@ -83,22 +140,60 @@ def compile_stub(source: str, out: Path) -> bool:
     return done.returncode == 0 and out.is_file()
 
 
+def payload_files(repo: Path) -> list[Path]:
+    """The repo files a standalone bundle carries: what git tracks, or
+    (outside a checkout) everything but the obvious local state."""
+    git = shutil.which("git")
+    if git is not None:
+        done = subprocess.run([git, "-C", str(repo), "ls-files", "-z"],
+                              capture_output=True, timeout=60)
+        if done.returncode == 0:
+            return [repo / name for name in
+                    done.stdout.decode().split("\0") if name]
+    skip = {".git", ".env", ".venv", "dist", "__pycache__"}
+    files = []
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in skip]
+        files += [Path(root) / n for n in names if n not in skip]
+    return files
+
+
+def bundle_version(repo: Path) -> str:
+    git = shutil.which("git")
+    if git is not None:
+        done = subprocess.run([git, "-C", str(repo), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=60)
+        if done.returncode == 0 and done.stdout.strip():
+            return done.stdout.strip()
+    return str(int(time.time()))
+
+
+def copy_payload(repo: Path, into: Path) -> None:
+    if into.exists():
+        shutil.rmtree(into)
+    for source in payload_files(repo):
+        target = into / source.relative_to(repo)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    (into / STAMP).write_text(bundle_version(repo) + "\n")
+
+
 def info_plist(repo: Path) -> dict:
     return {
         "CFBundleName": APP_NAME,
         "CFBundleDisplayName": APP_NAME,
         "CFBundleIdentifier": BUNDLE_ID,
-        "CFBundleExecutable": "voice-agent",
+        "CFBundleExecutable": "heygent",
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": "1.0",
         "CFBundleVersion": "1",
-        "CFBundleIconFile": "voice-agent.icns",
+        "CFBundleIconFile": "heygent.icns",
         "LSMinimumSystemVersion": "12.0",
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription":
-            "Voice Agent listens while you hold the push-to-talk key.",
+            "heygent listens while you hold the push-to-talk key.",
         "NSAppleEventsUsageDescription":
-            "Voice Agent raises its own window and terminal sessions.",
+            "heygent raises its own window and terminal sessions.",
     }
 
 
@@ -112,7 +207,7 @@ def make_icns(png: Path, icns: Path) -> bool:
     if sips is None or iconutil is None:
         return False
     with tempfile.TemporaryDirectory() as scratch:
-        iconset = Path(scratch) / "voice-agent.iconset"
+        iconset = Path(scratch) / "heygent.iconset"
         iconset.mkdir()
         for size in (16, 32, 64, 128, 256, 512, 1024):
             for scale, suffix in ((1, ""), (2, "@2x")):
@@ -132,13 +227,17 @@ def make_icns(png: Path, icns: Path) -> bool:
         return done.returncode == 0 and icns.is_file()
 
 
-def build_bundle(repo: Path, dest: Path, identity: str = "-") -> Path:
-    """Assemble `Voice Agent.app` under dest and return its path.
+def build_bundle(repo: Path, dest: Path, identity: str = "-",
+                 standalone: bool = False) -> Path:
+    """Assemble `heygent.app` under dest and return its path.
 
     `identity` is what codesign signs with: "-" (ad-hoc) is enough for
     an app that stays on this Mac; a "Developer ID Application" identity
     (signed with the hardened runtime and a timestamp, ready for
-    notarization) is what Gatekeeper accepts on other Macs."""
+    notarization) is what Gatekeeper accepts on other Macs.
+
+    A `standalone` bundle carries the repo inside it instead of pointing
+    at this checkout - the one to hand to someone else."""
     repo = repo.resolve()
     conduct = repo / "conduct.sh"
     if not conduct.is_file():
@@ -153,19 +252,26 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-") -> Path:
     with (contents / "Info.plist").open("wb") as handle:
         plistlib.dump(info_plist(repo), handle)
 
-    executable = macos / "voice-agent"
-    script = macos / "voice-agent.sh"
+    executable = macos / "heygent"
+    script = macos / "heygent.sh"
     for stale in (executable, script):
         stale.unlink(missing_ok=True)
     if compile_stub(STUB.replace("{script}", script.name), executable):
         launcher = script
     else:
         launcher = executable
-    launcher.write_text(LAUNCHER.format(conduct=conduct))
+    payload = resources / "app"
+    if standalone:
+        copy_payload(repo, payload)
+        launcher.write_text(STANDALONE_LAUNCHER.replace("{stamp}", STAMP))
+    else:
+        if payload.exists():
+            shutil.rmtree(payload)
+        launcher.write_text(LAUNCHER.format(conduct=conduct))
     launcher.chmod(0o755)
 
     make_icns(repo / "assets" / "icon.png",
-              resources / "voice-agent.icns")
+              resources / "heygent.icns")
 
     # Without any signature Gatekeeper on Apple silicon refuses to
     # launch it.
@@ -176,7 +282,7 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-") -> Path:
             command += ["--options", "runtime", "--timestamp"]
         command += ["--sign", identity, str(app)]
         done = subprocess.run(command, capture_output=True, text=True,
-                              timeout=120)
+                              timeout=600)
         if done.returncode != 0:
             raise RuntimeError(f"codesign failed: {done.stderr.strip()}")
     return app
@@ -184,7 +290,7 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-") -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="build Voice Agent.app around this repo")
+        description="build heygent.app around this repo")
     parser.add_argument("--install", action="store_true",
                         help="build into /Applications instead of ./dist")
     parser.add_argument("--dest", type=Path, default=None,
@@ -193,12 +299,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="codesign identity (default: ad-hoc); give a "
                              "'Developer ID Application' identity to sign "
                              "for other Macs")
+    parser.add_argument("--standalone", action="store_true",
+                        help="carry a copy of the repo inside the bundle "
+                             "instead of pointing at this checkout")
     args = parser.parse_args(argv)
     repo = Path(__file__).resolve().parent.parent
     dest = args.dest or (Path("/Applications") if args.install
                          else repo / "dist")
     dest.mkdir(parents=True, exist_ok=True)
-    app = build_bundle(repo, dest, identity=args.sign)
+    app = build_bundle(repo, dest, identity=args.sign,
+                       standalone=args.standalone)
     print(f"built {app}")
     return 0
 

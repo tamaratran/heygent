@@ -3,8 +3,8 @@
 # the app repo. See homebrew/README.md for setting the tap up.
 class VoiceConductor < Formula
   desc "Hold Fn, talk, and manage many Claude Code sessions by voice"
-  homepage "https://github.com/tamaratran/voice-agent"
-  head "https://github.com/tamaratran/voice-agent.git", branch: "master"
+  homepage "https://github.com/tamaratran/heygent"
+  head "https://github.com/tamaratran/heygent.git", branch: "main"
 
   depends_on :macos
   depends_on "tmux"

@@ -223,7 +223,7 @@ class Delegate(NSObject):
                  NSWindowStyleMaskFullSizeContentView)
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             rect, style, NSBackingStoreBuffered, False)
-        self.window.setTitle_("voice-agent")   # Mission Control, the Dock
+        self.window.setTitle_("heygent")   # Mission Control, the Dock
         self.window.setTitleVisibility_(NSWindowTitleHidden)
         self.window.setMinSize_(NSSize(430, 480))
         self.window.setFrameAutosaveName_("CodexConversation")
@@ -478,7 +478,7 @@ def objc_super_init(obj):
 def alert_and_quit(message: str) -> None:
     from AppKit import NSAlert
     alert = NSAlert.alloc().init()
-    alert.setMessageText_("voice-agent is not available")
+    alert.setMessageText_("heygent is not available")
     alert.setInformativeText_(message)
     alert.runModal()
     NSApplication.sharedApplication().terminate_(None)
@@ -491,7 +491,7 @@ def build_menu(app) -> None:
     bar.addItem_(app_item)
     app_menu = NSMenu.alloc().init()
     app_menu.addItem_(NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "Quit voice-agent", "terminate:", "q"))
+        "Quit heygent", "terminate:", "q"))
     app_item.setSubmenu_(app_menu)
     edit_item = NSMenuItem.alloc().init()
     bar.addItem_(edit_item)
@@ -513,7 +513,7 @@ def call_it_voice_agent() -> None:
     from Foundation import NSBundle
     info = NSBundle.mainBundle().infoDictionary()
     if info is not None:
-        info["CFBundleName"] = "voice-agent"
+        info["CFBundleName"] = "heygent"
 
 
 def set_app_icon(app) -> None:

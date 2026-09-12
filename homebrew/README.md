@@ -15,7 +15,7 @@ brew install --HEAD tamaratran/tap/voice-conductor
 conduct
 ```
 
-The formula is head-only (it installs from the current `master`) because
+The formula is head-only (it installs from the current `main`) because
 the app has no versioned releases yet. Once tags exist, add a `url`/`sha256`
 pointing at the release tarball so plain `brew install` works too.
 

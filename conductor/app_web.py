@@ -64,7 +64,7 @@ ASSET_TYPES = {".js": "application/javascript", ".css": "text/css"}
 PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>voice-agent</title>
+<title>heygent</title>
 <link rel="stylesheet" href="assets/xterm.css">
 <script src="assets/xterm.js"></script>
 <script src="assets/xterm-addon-fit.js"></script>
