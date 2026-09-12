@@ -38,9 +38,12 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import dialogs
 
 DEFAULT_HOME = Path.home() / ".voice-conductor"
 LOCK_NAME = "conductor.lock"
@@ -223,6 +226,46 @@ def acquire(home: str | Path | None, run_id: str, *, takeover: bool = False,
          f"this conductor (pid {mine.pid}) holds {path.parent}",
          data={"run_id": run_id})
     return mine
+
+
+ALREADY_RUNNING = ("heygent is already running on this Mac (pid {pid}, "
+                   "started {when}). Two of them would share the "
+                   "microphone, so this one is not starting.\n\nQuit the "
+                   "other one - it may be a Terminal window - or take over: "
+                   "that one closes and this one carries on.")
+
+
+def claim(home: str | Path | None, run_id: str, *, takeover: bool = False,
+          argv: list[str] | None = None, on_terminal: bool | None = None,
+          alert=None, acquire=acquire) -> bool:
+    """acquire, and when the home is taken say so where the user is: on
+    the terminal when there is one, otherwise in a dialog that offers
+    the takeover - a conductor opened from Finder has no --takeover to
+    start again with, and the log is the only other place the refusal
+    would go."""
+    alert = dialogs.alert if alert is None else alert
+    on_terminal = dialogs.has_terminal() if on_terminal is None else on_terminal
+    try:
+        acquire(home, run_id, takeover=takeover, argv=argv)
+        return True
+    except AlreadyRunning as clash:
+        if on_terminal or takeover:
+            print(f"{clash}\nQuit that one first, or start again with "
+                  "--takeover.", file=sys.stderr, flush=True)
+            return False
+        existing = clash.instance
+        print(clash, file=sys.stderr, flush=True)
+        text = ALREADY_RUNNING.format(pid=existing.pid,
+                                      when=existing.started_at or "earlier")
+        if alert(text, ("Quit", "Take over")) != "Take over":
+            return False
+    try:
+        acquire(home, run_id, takeover=True, argv=argv)
+        return True
+    except AlreadyRunning as clash:
+        print(clash, file=sys.stderr, flush=True)
+        alert(f"{clash}.", ("Quit",))
+        return False
 
 
 def heartbeat(home: str | Path | None, run_id: str,

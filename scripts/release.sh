@@ -1,10 +1,10 @@
 #!/bin/bash
-# Build the heygent.zip that the README's download link hands out:
-# the standalone bundle, signed with the Developer ID, notarized by
-# Apple, stapled, and zipped without the AppleDouble (._*) side files
-# that make Gatekeeper call the signature unusable.
+# Build the heygent.dmg that the README's download link hands out: the
+# standalone bundle, signed with the Developer ID, notarized by Apple
+# and stapled, on a disk image with an Applications alias to drag it
+# onto - the image itself signed, notarized and stapled too.
 #
-#     scripts/release.sh                 # -> dist/release/heygent.zip
+#     scripts/release.sh                 # -> dist/release/heygent.dmg
 #
 # Signing: the "Developer ID Application" identity must be in the
 # keychain (HEYGENT_SIGN_IDENTITY overrides the default below).
@@ -18,9 +18,9 @@
 #     HEYGENT_NOTARY_APP_SPECIFIC_PASSWORD (an app-specific password from
 #     account.apple.com, not the account password), HEYGENT_NOTARY_TEAM_ID
 #
-# Publishing is separate: upload dist/release/heygent.zip as the one
+# Publishing is separate: upload dist/release/heygent.dmg as the one
 # asset of a GitHub release; the README link always points at the
-# latest release's heygent.zip.
+# latest release's heygent.dmg.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.."
 IDENTITY="${HEYGENT_SIGN_IDENTITY:-Developer ID Application: Lambo Labs, Inc. (UL4H2AU46Z)}"
 DIST="${HEYGENT_RELEASE_DIR:-dist/release}"
 APP="$DIST/heygent.app"
-ZIP="$DIST/heygent.zip"
+DMG="$DIST/heygent.dmg"
 
 notary_args=()
 if [ -n "${HEYGENT_NOTARY_PROFILE:-}" ]; then
@@ -58,38 +58,55 @@ echo "== build + sign"
 python3 -m conductor.app_bundle --standalone --dest "$DIST" --sign "$IDENTITY"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
-echo "== notarize"
+notarize() {  # <file> <log name>
+  xcrun notarytool submit "$1" --wait "${notary_args[@]}" \
+    | tee "$DIST/$2"
+  grep -q "status: Accepted" "$DIST/$2" || {
+    echo "notarization of $1 did not end Accepted; for the reasons:" >&2
+    echo "  xcrun notarytool log <id> ${notary_args[*]}" >&2
+    exit 1
+  }
+}
+
+echo "== notarize the app"
+# Submitted as a zip with no extended attributes (and none of the
+# AppleDouble ._* files that carry them): what Apple sees is the
+# unzipped copy, so a signature that lived only in xattrs is gone by
+# then and the service says "the signature of the binary is invalid".
+# Catch that here.
 ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$DIST/notarize.zip"
-# What Apple sees is the unzipped copy, with no extended attributes: a
-# signature that lived only in xattrs is gone by now and the service
-# says "the signature of the binary is invalid". Catch that here.
 unzipped="$(mktemp -d)"
 ditto -x -k "$DIST/notarize.zip" "$unzipped"
 codesign --verify --deep --strict "$unzipped/heygent.app"
 rm -rf "$unzipped"
-xcrun notarytool submit "$DIST/notarize.zip" --wait "${notary_args[@]}" \
-  | tee "$DIST/notarize.log"
-grep -q "status: Accepted" "$DIST/notarize.log" || {
-  echo "notarization did not end Accepted; for the reasons:" >&2
-  echo "  xcrun notarytool log <id> ${notary_args[*]}" >&2
-  exit 1
-}
+notarize "$DIST/notarize.zip" notarize-app.log
 rm "$DIST/notarize.zip"
 xcrun stapler staple "$APP"
 
-echo "== zip"
-ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$ZIP"
+echo "== dmg"
+# The Finder window a download is expected to open with: the app and
+# an Applications folder to drag it onto. The image is signed and
+# notarized in its own right, so opening it is as quiet as opening the
+# app; the app inside carries its own stapled ticket.
+staging="$(mktemp -d)"
+ditto "$APP" "$staging/heygent.app"
+ln -s /Applications "$staging/Applications"
+hdiutil create -quiet -volname heygent -srcfolder "$staging" -fs HFS+ \
+  -format UDZO -ov "$DMG"
+rm -rf "$staging"
+codesign --sign "$IDENTITY" --timestamp "$DMG"
+notarize "$DMG" notarize-dmg.log
+xcrun stapler staple "$DMG"
 
 echo "== verify what a download gets"
-check="$(mktemp -d)"
-ditto -x -k "$ZIP" "$check"
-if unzip -l "$ZIP" | grep -q '/\._'; then
-  echo "AppleDouble files inside $ZIP" >&2
-  exit 1
-fi
-codesign --verify --deep --strict "$check/heygent.app"
-spctl --assess --type execute --verbose=2 "$check/heygent.app"
-xcrun stapler validate "$check/heygent.app"
-rm -rf "$check"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+xcrun stapler validate "$DMG"
+mount="$(mktemp -d)"
+hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "$DMG"
+[ -L "$mount/Applications" ] || { echo "no Applications alias in $DMG" >&2; exit 1; }
+codesign --verify --deep --strict "$mount/heygent.app"
+spctl --assess --type execute --verbose=2 "$mount/heygent.app"
+xcrun stapler validate "$mount/heygent.app"
+hdiutil detach -quiet "$mount"
 
-echo "ready: $ZIP ($(du -h "$ZIP" | cut -f1))"
+echo "ready: $DMG ($(du -h "$DMG" | cut -f1))"

@@ -120,6 +120,82 @@ class TheLockRefusesASecond(unittest.TestCase):
                                  sleep=lambda s: None)
         self.assertIn("did not exit", str(caught.exception))
 
+    def test_from_finder_the_refusal_is_a_dialog_that_offers_takeover(
+            self) -> None:
+        """Opened from Finder there is no terminal to read the refusal
+        on and no --takeover to start again with: the app just does not
+        appear. (What the user saw on 2026-09-12: the Terminal window
+        from the first onboarding was still waiting for a key, holding
+        the lock.) So the refusal is a dialog, and its second button is
+        the takeover."""
+        other = self.mine + 6
+        instance._write(instance.lock_path(self.home),
+                        instance.Instance(pid=other, run_id="run_1",
+                                          started_at="Mon Sep 8 10:00"))
+        living = {other: "Mon Sep 8 10:00", self.mine: "Mon Sep 8 11:00"}
+        shown = []
+
+        def alert(text, buttons):
+            shown.append((text, buttons))
+            return "Take over"
+
+        def acquire(home, run_id, *, takeover, argv):
+            with mock.patch.object(instance.os, "kill",
+                                   lambda pid, sig: living.pop(pid, None)):
+                return instance.acquire(home, run_id, takeover=takeover,
+                                        argv=argv, run=fake_ps(living),
+                                        sleep=lambda s: None)
+
+        self.assertTrue(instance.claim(self.home, "run_2", on_terminal=False,
+                                       alert=alert, acquire=acquire))
+        self.assertEqual(len(shown), 1)
+        text, buttons = shown[0]
+        self.assertIn("already running", text)
+        self.assertIn(str(other), text)
+        self.assertEqual(buttons, ("Quit", "Take over"))
+        self.assertEqual(instance.read(self.home).run_id, "run_2")
+
+    def test_from_finder_quit_leaves_the_running_one_alone(self) -> None:
+        other = self.mine + 7
+        instance._write(instance.lock_path(self.home),
+                        instance.Instance(pid=other, run_id="run_1",
+                                          started_at="Mon Sep 8 10:00"))
+        living = {other: "Mon Sep 8 10:00", self.mine: "Mon Sep 8 11:00"}
+        killed = []
+
+        def acquire(home, run_id, *, takeover, argv):
+            with mock.patch.object(instance.os, "kill",
+                                   lambda pid, sig: killed.append(pid)):
+                return instance.acquire(home, run_id, takeover=takeover,
+                                        argv=argv, run=fake_ps(living))
+
+        self.assertFalse(instance.claim(self.home, "run_2", on_terminal=False,
+                                        alert=lambda t, b: "Quit",
+                                        acquire=acquire))
+        self.assertEqual(killed, [])
+        self.assertEqual(instance.read(self.home).run_id, "run_1")
+
+    def test_on_a_terminal_the_refusal_is_printed_not_shown(self) -> None:
+        other = self.mine + 8
+        instance._write(instance.lock_path(self.home),
+                        instance.Instance(pid=other, run_id="run_1",
+                                          started_at="Mon Sep 8 10:00"))
+        living = {other: "Mon Sep 8 10:00", self.mine: "Mon Sep 8 11:00"}
+
+        def acquire(home, run_id, *, takeover, argv):
+            return instance.acquire(home, run_id, takeover=takeover,
+                                    argv=argv, run=fake_ps(living))
+
+        def alert(text, buttons):
+            self.fail("a dialog on a terminal")
+
+        with mock.patch.object(instance.sys, "stderr") as err:
+            self.assertFalse(instance.claim(self.home, "run_2",
+                                            on_terminal=True, alert=alert,
+                                            acquire=acquire))
+        printed = "".join(str(c.args[0]) for c in err.write.call_args_list)
+        self.assertIn("--takeover", printed)
+
     def test_releasing_is_only_ever_our_own(self) -> None:
         instance.acquire(self.home, "run_1",
                          run=fake_ps({self.mine: "Mon Sep 8 10:00"}))

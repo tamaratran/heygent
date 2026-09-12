@@ -16,14 +16,15 @@ Build it:
     python3 -m conductor.app_bundle --standalone  # for other Macs
 
 A standalone bundle carries a copy of the repo in Contents/Resources/app
-and, on launch, unpacks it to ~/.voice-conductor/app (the same place
-install.sh puts a checkout, and left alone if one is there) before
-running conduct.sh from that copy; nothing is ever written inside the
-signed bundle. A first run with a tool missing runs install.sh in the
-background behind a "setting up" dialog; the OpenAI key, the Claude
-login and the permissions are asked for by conduct.py itself, in
-dialogs. Terminal is offered only when the install fails, so the errors
-can be seen.
+and, on launch, unpacks it to ~/.voice-conductor/app before running
+conduct.sh from that copy; nothing is ever written inside the signed
+bundle. A git checkout at that path (install.sh's, or a developer's) is
+left alone and not run: the copy goes to ~/.voice-conductor/release
+instead, so the downloaded app always runs the downloaded code. A first
+run with a tool missing runs install.sh in the background behind a
+"setting up" dialog; the OpenAI key, the Claude login and the
+permissions are asked for by conduct.py itself, in dialogs. Terminal is
+offered only when the install fails, so the errors can be seen.
 
 The bundle's executable is a small Mach-O stub that execs the launcher
 script, Contents/Resources/heygent.sh: LaunchServices (Finder, `open`,
@@ -74,14 +75,37 @@ LOG_DIR="$CONDUCTOR_HOME/logs"
 mkdir -p "$LOG_DIR"
 exec >>"$LOG_DIR/app-launch.log" 2>&1
 
-# A git checkout there (install.sh's) is the user's; leave it. Anything
-# else is ours: refresh it whenever the bundle carries a different
-# version. .env is never in the bundle, so it survives the refresh.
-if [ ! -d "$APP_DIR/.git" ]; then
-  if ! cmp -s "$PAYLOAD/{stamp}" "$APP_DIR/{stamp}"; then
-    mkdir -p "$APP_DIR"
-    ditto "$PAYLOAD" "$APP_DIR"
+# Double-clicked inside the disk image's window instead of dragged out
+# of it: the permissions macOS would grant go to a path that is gone
+# once the image is ejected, so ask for the drag instead.
+case "$CONTENTS" in /Volumes/*)
+  volume="$(df -P "$CONTENTS" | sed -nE '2s/^.*[0-9]+% +//p')"
+  if [ -n "$volume" ] && hdiutil info 2>/dev/null | grep -qF "	$volume"; then
+    echo "running from the disk image at $volume; asking for the drag to Applications"
+    osascript -e 'display dialog "heygent is still on the disk image. Drag heygent onto the Applications folder next to it, then open it from Applications." with title "heygent" buttons {"OK"} default button "OK" with icon caution' >/dev/null 2>&1
+    exit 1
   fi
+  ;;
+esac
+
+# A git checkout at app/ (install.sh's, or a developer's) is the user's
+# and is not written into - but it is not run either: the app that was
+# downloaded runs the code that was downloaded, from release/ instead.
+# Anything else at app/ is ours: refreshed whenever the bundle carries
+# a different version. .env is never in the bundle, so it survives the
+# refresh; a release/ that has none starts with the checkout's.
+if [ -d "$APP_DIR/.git" ]; then
+  echo "$APP_DIR is a git checkout; running the bundled release from $CONDUCTOR_HOME/release"
+  CHECKOUT="$APP_DIR"
+  APP_DIR="$CONDUCTOR_HOME/release"
+  if [ ! -f "$APP_DIR/.env" ] && [ -f "$CHECKOUT/.env" ]; then
+    mkdir -p "$APP_DIR"
+    cp "$CHECKOUT/.env" "$APP_DIR/.env"
+  fi
+fi
+if ! cmp -s "$PAYLOAD/{stamp}" "$APP_DIR/{stamp}"; then
+  mkdir -p "$APP_DIR"
+  ditto "$PAYLOAD" "$APP_DIR"
 fi
 
 missing=""

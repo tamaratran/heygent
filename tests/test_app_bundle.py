@@ -138,6 +138,57 @@ class TheBundle(unittest.TestCase):
         self.assertNotIn("Terminal", quiet_path,
                          "Terminal is for a failed install only")
 
+    def test_a_git_checkout_at_app_is_neither_written_nor_run(self):
+        """~/.voice-conductor/app may be install.sh's clone or the
+        developer's own; the app never writes into it. It never runs it
+        either - that is how a downloaded heygent came to run months-old
+        code and show none of its dialogs - the bundled copy goes to
+        release/ and runs from there, starting with the checkout's .env
+        so the key is not asked for again."""
+        home = Path(self.scratch.name) / "home"
+        checkout = home / "app"
+        (checkout / ".git").mkdir(parents=True)
+        log = Path(self.scratch.name) / "calls.log"
+        (checkout / "conduct.sh").write_text(
+            f"#!/bin/bash\necho old-conduct >> '{log}'\n")
+        (checkout / "conduct.sh").chmod(0o755)
+        (checkout / app_bundle.STAMP).write_text("old")
+        (checkout / ".env").write_text("OPENAI_API_KEY=kept\n")
+        fake_bin = Path(self.scratch.name) / "bin"
+        fake_bin.mkdir()
+        for tool in ("uv", "tmux", "claude", "osascript"):
+            (fake_bin / tool).write_text("#!/bin/bash\n")
+            (fake_bin / tool).chmod(0o755)
+        bundle = Path(self.scratch.name) / "heygent.app" / "Contents"
+        payload = bundle / "Resources" / "app"
+        payload.mkdir(parents=True)
+        (payload / app_bundle.STAMP).write_text("new")
+        (payload / "conduct.sh").write_text(
+            f"#!/bin/bash\necho new-conduct >> '{log}'\n")
+        (payload / "conduct.sh").chmod(0o755)
+        (bundle / "MacOS").mkdir()
+        launcher = bundle / "MacOS" / "heygent"
+        launcher.write_text(app_bundle.STANDALONE_LAUNCHER.replace(
+            "{stamp}", app_bundle.STAMP).replace(
+            "/opt/homebrew/bin:/usr/local/bin", str(fake_bin)))
+        env = {"HOME": str(home), "VOICE_CONDUCTOR_HOME": str(home),
+               "PATH": "/usr/bin:/bin"}
+        log.write_text("")
+        subprocess.run(["bash", str(launcher)], env=env, check=True,
+                       timeout=30)
+        self.assertEqual(log.read_text().split(), ["new-conduct"])
+        self.assertEqual((checkout / app_bundle.STAMP).read_text(), "old")
+        release = home / "release"
+        self.assertEqual((release / app_bundle.STAMP).read_text(), "new")
+        self.assertEqual((release / ".env").read_text(),
+                         "OPENAI_API_KEY=kept\n")
+        # A key the release copy has since been given is its own.
+        (release / ".env").write_text("OPENAI_API_KEY=newer\n")
+        subprocess.run(["bash", str(launcher)], env=env, check=True,
+                       timeout=30)
+        self.assertEqual((release / ".env").read_text(),
+                         "OPENAI_API_KEY=newer\n")
+
     def test_a_repo_without_conduct_sh_is_refused(self):
         bare = Path(self.scratch.name) / "bare"
         bare.mkdir()

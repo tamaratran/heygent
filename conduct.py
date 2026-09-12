@@ -671,13 +671,9 @@ async def main() -> int:
     # within a process and cannot serialise across two), the tmux session
     # names (so every message to a worker bounces with `duplicate
     # session`), and the workers themselves.
-    try:
-        await asyncio.to_thread(instance.acquire, home, current_run(),
-                                takeover=args.takeover, argv=list(sys.argv))
-    except instance.AlreadyRunning as clash:
-        print(f"{clash}\n"
-              "Quit that one first, or start again with --takeover.",
-              file=sys.stderr, flush=True)
+    if not await asyncio.to_thread(instance.claim, home, current_run(),
+                                   takeover=args.takeover,
+                                   argv=list(sys.argv)):
         return 1
     held = True
 
