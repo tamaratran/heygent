@@ -147,7 +147,27 @@ EOF
   fi
 fi
 
-exec "$APP_DIR/conduct.sh"
+# conduct.py explains its own refusals and crashes in dialogs. What it
+# cannot explain is never having started - uv failing to fetch Python
+# or the dependencies, most often - so a non-zero exit with no "run id:"
+# line from this launch is said here, with the log's last lines.
+LOG="$LOG_DIR/app-launch.log"
+before="$(wc -c <"$LOG" | tr -d ' ')"
+"$APP_DIR/conduct.sh"
+status=$?
+if [ "$status" -ne 0 ] && ! tail -c "+$((before + 1))" "$LOG" | grep -q '^run id: '; then
+  echo "conduct.sh exited $status before heygent started"
+  osascript - "$LOG" "$(tail -c "+$((before + 1))" "$LOG" | grep -v '^conduct.sh exited' | tail -n 8 | perl -pe 's/\\e\\[[0-9;]*m//g')" <<'EOF'
+on run argv
+  set logPath to item 1 of argv
+  set tailText to item 2 of argv
+  set msg to "heygent could not start." & return & return & tailText & return & return & "The full log is at " & logPath & "."
+  set answer to display dialog msg with title "heygent" buttons {"Quit", "Show Log"} default button "Show Log" with icon caution
+  if button returned of answer is "Show Log" then do shell script "open " & quoted form of logPath
+end run
+EOF
+fi
+exit "$status"
 """
 
 STAMP = ".bundle-version"
