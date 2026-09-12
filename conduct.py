@@ -118,6 +118,11 @@ class ConductorVoice(VoiceAgent):
         # turns are drawn there too, as they happen.
         self.mirror = None
 
+    async def _watch_overlay(self, stream) -> None:
+        # main()'s read_overlay owns the pipe and hands every message to
+        # handle_overlay_event; a second reader on one StreamReader raises.
+        return
+
     def _reply_spoken(self, text: str) -> None:
         # The Boss learns what the voice said through what_the_voice_said,
         # when it asks; nothing is typed into its window for this.
@@ -1060,11 +1065,14 @@ async def main() -> int:
     for state in conductor.subagent_states():
         ui.send(notice=project_card(state))
 
+    agent: ConductorVoice | None = None
+
     async def read_overlay() -> None:
         """Dropdown clicks: mark the task (or one notification) read."""
         while True:
             line = await overlay.stdout.readline()
             if not line:
+                ui.request_quit("the overlay exited")
                 return
             try:
                 event = json.loads(line)
@@ -1127,6 +1135,10 @@ async def main() -> int:
                                 severity="error", exc_info=True,
                                 task_id=task_id, source="notification")
                     asyncio.create_task(focus())
+            if event.get("event") == "quit_requested" and agent is None:
+                ui.request_quit("Quit chosen in the overlay menu")
+            elif agent is not None:
+                agent.handle_overlay_event(event)
 
     overlay_reader = asyncio.create_task(read_overlay())
 
@@ -1306,7 +1318,7 @@ async def main() -> int:
     try:
         if args.no_hotkey:
             agent.holding = True
-            await session_task
+            await ui.wait_with(session_task)
         else:
             print("hold Fn and talk, release to get an answer, "
                   "double-tap Fn for notifications, ctrl-c to quit",

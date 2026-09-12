@@ -150,3 +150,34 @@ description: How to run and end-to-end test the voice-agent macOS app (conduct.s
 ## Devin Secrets Needed
 - ANTHROPIC_API_KEY (Claude Code auth via keychain helper)
 - OPENAI_GPT_LIVE_KEY (GPT Live realtime API, goes in .env)
+
+## Testing a signed release from a fresh home
+- Read the release README and test the distributed ZIP, not a locally rebuilt
+  bundle. Back up (never delete) `~/.voice-conductor`, stop its processes, remove
+  old installed app bundles only when authorized, and reset
+  `tccutil reset All ai.heygent.conductor` plus `tccutil reset AppleEvents`.
+  Existing Terminal microphone/accessibility grants are separate from heygent's.
+- A hand-added Safari-style quarantine attribute on a curl ZIP can produce a
+  Finder "damaged" dialog even when its hash and `unzip -t` match. Reproduce with
+  a genuine browser download before attributing this to the release. Safari may
+  automatically extract the app and move the ZIP to Trash; check both locations.
+  `spctl -a -t open --context context:primary-signature` rejecting a ZIP is not
+  evidence its embedded app is invalid: assess the extracted app with
+  `spctl -a -t exec -vv` and verify the actual Finder Gatekeeper dialog.
+- For hidden API prompts, secure per-key typing may mangle characters. If this
+  happens, use the available key environment variable with `printf '%s'
+  "$OPENAI_API_KEY" | pbcopy`, paste into the hidden prompt, then clear the
+  clipboard. Verify saved-key equality without printing either value. Do not
+  expose credentials in a GUI command or write a separate plaintext helper.
+- First launch runs from Terminal, while later launches may run directly.
+  Observe permissions for both hosting identities; a remembered permission
+  walkthrough does not prove the direct launch has the same grants.
+  Accessibility/Input Monitoring/Screen Recording changes may require the
+  local macOS account password; cancel and report blocked rather than guessing.
+- A bell menu alone is not proof the capsule appeared or the microphone works.
+  Record those assertions separately. After "Quit heygent", check conductor,
+  hotkey, overlay, and test-created Boss processes actually stopped, especially
+  while the voice provider is reconnecting.
+- `OPENAI_API_KEY` is also a usable test-secret name when supplied by the
+  session. An account with `credit_balance_exhausted` can exercise installation
+  and launch, but cannot prove live speech or microphone capture.

@@ -407,6 +407,28 @@ class Ui:
         # already set, which would leave the overlay's own default unchallenged.
         self.state = ""
         self.write_failed = False
+        # Set when the user chooses Quit in the overlay's menu, or the
+        # overlay itself goes away: the only visible way out of an app
+        # launched from Finder, so the whole run ends on it, not the
+        # overlay alone.
+        self.quit_requested = asyncio.Event()
+
+    def request_quit(self, reason: str) -> None:
+        if not self.quit_requested.is_set():
+            application_log("ui", "app.quit_requested", reason)
+        self.quit_requested.set()
+
+    async def wait_with(self, session_task: asyncio.Task) -> None:
+        """Return when quit is requested or the session ends; a session
+        that failed raises here, as awaiting it directly would."""
+        quit_ = asyncio.ensure_future(self.quit_requested.wait())
+        try:
+            await asyncio.wait({session_task, quit_},
+                               return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            quit_.cancel()
+        if session_task.done():
+            session_task.result()
 
     def send(self, **msg) -> None:
         if "state" in msg:
@@ -1057,6 +1079,7 @@ class VoiceAgent:
         while True:
             line = await stream.readline()
             if not line:
+                self.ui.request_quit("the overlay exited")
                 return
             try:
                 event = json.loads(line)
@@ -1066,19 +1089,25 @@ class VoiceAgent:
                                 severity="warning",
                                 line=line.decode(errors="replace")[:300])
                 continue
-            if event.get("event") == "visibility":
-                hidden = bool(event.get("hidden"))
-                application_log("ui", "overlay.visibility_changed",
-                                f"the overlay is now "
-                                f"{'hidden' if hidden else 'on screen'}",
-                                hidden=hidden)
-                continue
-            if event.get("event") == "dismiss":
-                self.muted_turn = True
-                self.speaker.flush()
-                print("dismissed - stopping playback", flush=True)
-                log("dismissed")
-                self._emit("voice.reply_dismissed")
+            self.handle_overlay_event(event)
+
+    def handle_overlay_event(self, event: dict) -> None:
+        """One overlay message, from whichever loop reads the pipe."""
+        kind = event.get("event")
+        if kind == "quit_requested":
+            self.ui.request_quit("Quit chosen in the overlay menu")
+        elif kind == "visibility":
+            hidden = bool(event.get("hidden"))
+            application_log("ui", "overlay.visibility_changed",
+                            f"the overlay is now "
+                            f"{'hidden' if hidden else 'on screen'}",
+                            hidden=hidden)
+        elif kind == "dismiss":
+            self.muted_turn = True
+            self.speaker.flush()
+            print("dismissed - stopping playback", flush=True)
+            log("dismissed")
+            self._emit("voice.reply_dismissed")
 
     async def _pump_ui(self) -> None:
         """The capsule means exactly one thing: the microphone is open.
@@ -1701,13 +1730,16 @@ class HotkeyListener:
                             severity="warning")
 
     async def wait_with(self, session_task: asyncio.Task) -> None:
-        """Return when the hotkey goes away or the session does."""
+        """Return when the hotkey goes away, the session does, or the
+        user quits from the overlay."""
         gone = asyncio.ensure_future(self.ended.wait())
+        quit_ = asyncio.ensure_future(self.agent.ui.quit_requested.wait())
         try:
-            await asyncio.wait({session_task, gone},
+            await asyncio.wait({session_task, gone, quit_},
                                return_when=asyncio.FIRST_COMPLETED)
         finally:
             gone.cancel()
+            quit_.cancel()
 
     def stop(self) -> None:
         if self.proc is not None and self.proc.poll() is None:
@@ -1785,7 +1817,7 @@ async def main() -> int:
     try:
         if args.no_hotkey:
             agent.holding = True
-            await session_task
+            await ui.wait_with(session_task)
         else:
             print("hold Fn and talk, release to get an answer, "
                   "double-tap Fn for notifications, ctrl-c to quit",
