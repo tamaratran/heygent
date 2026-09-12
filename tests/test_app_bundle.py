@@ -53,7 +53,10 @@ class TheBundle(unittest.TestCase):
             self.assertIn(handle.read(4), (b"\xcf\xfa\xed\xfe",
                                            b"\xca\xfe\xba\xbe"),
                           "the executable is not Mach-O")
-        script = macos / "heygent.sh"
+        # The script is a resource, not a second piece of code beside
+        # the stub: codesign would sign it in xattrs, which a zip loses.
+        self.assertEqual([p.name for p in macos.iterdir()], ["heygent"])
+        script = app / "Contents" / "Resources" / "heygent.sh"
         self.assertIn(str(self.repo / "conduct.sh"), script.read_text())
         self.assertTrue(script.stat().st_mode & 0o111)
         # A run of the stub execs the script: give it a script that

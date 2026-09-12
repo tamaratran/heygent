@@ -60,6 +60,13 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "== notarize"
 ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$DIST/notarize.zip"
+# What Apple sees is the unzipped copy, with no extended attributes: a
+# signature that lived only in xattrs is gone by now and the service
+# says "the signature of the binary is invalid". Catch that here.
+unzipped="$(mktemp -d)"
+ditto -x -k "$DIST/notarize.zip" "$unzipped"
+codesign --verify --deep --strict "$unzipped/heygent.app"
+rm -rf "$unzipped"
 xcrun notarytool submit "$DIST/notarize.zip" --wait "${notary_args[@]}" \
   | tee "$DIST/notarize.log"
 grep -q "status: Accepted" "$DIST/notarize.log" || {

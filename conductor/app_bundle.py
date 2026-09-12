@@ -26,10 +26,15 @@ dialogs. Terminal is offered only when the install fails, so the errors
 can be seen.
 
 The bundle's executable is a small Mach-O stub that execs the launcher
-script beside it: LaunchServices (Finder, `open`, the Dock) refuses to
-launch a bundle whose CFBundleExecutable is a shell script (-10669).
-Without a C compiler the script stands in as the executable and the
-app can only be started from a terminal.
+script, Contents/Resources/heygent.sh: LaunchServices (Finder, `open`,
+the Dock) refuses to launch a bundle whose CFBundleExecutable is a
+shell script (-10669). The script lives under Resources, not beside the
+stub, because codesign treats everything in Contents/MacOS as code and
+signs a script there in extended attributes only - which a zip drops
+(the notary service then finds it unsigned) or carries as a `._` file
+(which Gatekeeper rejects). A resource is sealed in CodeResources and
+survives either. Without a C compiler the script stands in as the
+executable and the app can only be started from a terminal.
 """
 from __future__ import annotations
 
@@ -61,8 +66,8 @@ STANDALONE_LAUNCHER = """#!/bin/bash
 # The app's launcher, standalone flavour: the repo travels inside the
 # bundle and runs from a copy under the conductor home.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-HERE="$(cd "$(dirname "$0")" && pwd)"
-PAYLOAD="$HERE/../Resources/app"
+CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
+PAYLOAD="$CONTENTS/Resources/app"
 CONDUCTOR_HOME="${VOICE_CONDUCTOR_HOME:-$HOME/.voice-conductor}"
 APP_DIR="$CONDUCTOR_HOME/app"
 LOG_DIR="$CONDUCTOR_HOME/logs"
@@ -123,7 +128,7 @@ exec "$APP_DIR/conduct.sh"
 
 STAMP = ".bundle-version"
 
-# The Mach-O executable: exec the launcher script next to itself.
+# The Mach-O executable: exec the launcher script under ../Resources.
 STUB = r"""#include <libgen.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
@@ -139,7 +144,8 @@ int main(int argc, char **argv) {
     char real[PATH_MAX];
     if (realpath(self, real) == NULL) return 1;
     char script[PATH_MAX];
-    snprintf(script, sizeof(script), "%s/%s", dirname(real), "{script}");
+    snprintf(script, sizeof(script), "%s/../Resources/%s", dirname(real),
+             "{script}");
     execv(script, argv);
     perror(script);
     return 1;
@@ -274,8 +280,8 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
         plistlib.dump(info_plist(repo), handle)
 
     executable = macos / "heygent"
-    script = macos / "heygent.sh"
-    for stale in (executable, script):
+    script = resources / "heygent.sh"
+    for stale in (executable, script, macos / "heygent.sh"):
         stale.unlink(missing_ok=True)
     if compile_stub(STUB.replace("{script}", script.name), executable):
         launcher = script
