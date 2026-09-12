@@ -30,6 +30,7 @@ import asyncio
 import json
 import os
 import plistlib
+import shutil
 import sys
 import sysconfig
 import threading
@@ -38,6 +39,8 @@ from pathlib import Path
 
 if __package__ in (None, ""):                    # run as a uv script
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from conductor.app_bundle import make_icns
 
 import objc
 from AppKit import (NSApplication, NSApplicationActivationPolicyRegular,
@@ -516,7 +519,26 @@ _RELAUNCHED = "HEYGENT_WINDOW_RELAUNCHED"
 
 
 def window_bundle(home: Path) -> Path:
-    return home / f"{APP_NAME}-window.app"
+    """Named heygent.app because the Dock's tooltip is the bundle's
+    file name, whatever CFBundleDisplayName says."""
+    return home / f"{APP_NAME}.app"
+
+
+def window_icon(bundle: Path) -> str | None:
+    """The icon under the window's Dock tile: the outer heygent.app's
+    heygent.icns when this runs inside one, otherwise made once from
+    assets/icon.png. None when there is neither."""
+    icns = bundle / "Contents" / "Resources" / "heygent.icns"
+    if icns.is_file():
+        return icns.name
+    repo = Path(__file__).resolve().parent.parent
+    outer = repo.parent / "heygent.icns"        # Contents/Resources/app/..
+    icns.parent.mkdir(parents=True, exist_ok=True)
+    if outer.is_file():
+        shutil.copyfile(outer, icns)
+        return icns.name
+    return icns.name if make_icns(repo / "assets" / "icon.png", icns) \
+        else None
 
 
 def relaunch_named(home: Path, env=None, argv=None,
@@ -528,8 +550,8 @@ def relaunch_named(home: Path, env=None, argv=None,
     python3.13, so that is what the tooltip said under our own icon.
     Setting CFBundleName in the running process does not reach them.
     What does is the executable's path: a symlink to the very same
-    interpreter, inside a minimal heygent-window.app in the conductor
-    home, and Launch Services reads that bundle's Info.plist. The venv
+    interpreter, inside a minimal heygent.app in the conductor home,
+    and Launch Services reads that bundle's Info.plist. The venv
     is kept by putting its site-packages on PYTHONPATH, since the
     interpreter no longer sits next to its pyvenv.cfg. True when the
     exec was made (it does not return then); False when this is already
@@ -545,7 +567,7 @@ def relaunch_named(home: Path, env=None, argv=None,
     link = macos / APP_NAME
     try:
         macos.mkdir(parents=True, exist_ok=True)
-        (bundle / "Contents" / "Info.plist").write_bytes(plistlib.dumps({
+        info = {
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": APP_NAME,
             "CFBundleIdentifier": WINDOW_BUNDLE_ID,
@@ -553,7 +575,11 @@ def relaunch_named(home: Path, env=None, argv=None,
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": "1.0",
             "NSHighResolutionCapable": True,
-        }))
+        }
+        icon = window_icon(bundle)
+        if icon:
+            info["CFBundleIconFile"] = icon
+        (bundle / "Contents" / "Info.plist").write_bytes(plistlib.dumps(info))
         if link.is_symlink() and os.readlink(link) != str(interpreter):
             link.unlink()                # a Python upgrade since last time
         if not link.is_symlink():

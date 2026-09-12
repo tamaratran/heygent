@@ -156,7 +156,9 @@ class NamedInTheDock(unittest.TestCase):
     """The Dock's tooltip under our icon said python3.13: a process is
     named after the bundle its executable is in, and a uv script's
     executable is the interpreter. So the window starts over through a
-    symlink to that same interpreter inside a heygent-window.app."""
+    symlink to that same interpreter inside a heygent.app of its own,
+    in the conductor home - called heygent.app because the tooltip is
+    the bundle's file name, not its CFBundleDisplayName."""
 
     def test_the_window_relaunches_as_heygent(self):
         import plistlib
@@ -170,7 +172,7 @@ class NamedInTheDock(unittest.TestCase):
                 execve=lambda *a: calls.append(a))
             self.assertTrue(done)
             path, argv, env = calls[0]
-            link = home / "heygent-window.app" / "Contents" / "MacOS" / "heygent"
+            link = home / "heygent.app" / "Contents" / "MacOS" / "heygent"
             self.assertEqual(path, str(link))
             self.assertEqual(argv, [str(link), "conductor/app_mac.py",
                                     "--stdio"])
@@ -178,10 +180,14 @@ class NamedInTheDock(unittest.TestCase):
                              Path(sys.executable).resolve(),
                              "the very same interpreter")
             info = plistlib.loads(
-                (home / "heygent-window.app" / "Contents" / "Info.plist")
+                (home / "heygent.app" / "Contents" / "Info.plist")
                 .read_bytes())
             self.assertEqual(info["CFBundleName"], "heygent")
             self.assertEqual(info["CFBundleExecutable"], "heygent")
+            self.assertEqual(info["CFBundleIconFile"], "heygent.icns")
+            self.assertTrue((home / "heygent.app" / "Contents" / "Resources"
+                             / "heygent.icns").stat().st_size > 0,
+                            "the Dock tile wears heygent's icon")
             self.assertEqual(env["HEYGENT_WINDOW_RELAUNCHED"], "1")
             self.assertTrue(env["PYTHONPATH"].endswith(":/x"),
                             "the venv's site-packages come first")
