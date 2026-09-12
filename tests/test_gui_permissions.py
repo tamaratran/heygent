@@ -234,11 +234,38 @@ class VoiceGrants(Base):
         self.assertIn("restart your terminal", self.said[-1])
 
     def test_an_unknowable_grant_is_not_a_missing_one(self) -> None:
-        """None means macOS will ask on first use (or the bindings are
-        absent); a pane opened for it would be noise."""
+        """None means never asked (or the bindings are absent); a pane
+        opened for it would be noise."""
         self.voice = {"microphone": None, "input_monitoring": None}
         self.assertEqual(self.ask(), [])
         self.assertEqual(self.opened, [])
+
+    def test_a_microphone_never_asked_for_is_asked_for_at_launch(self) -> None:
+        """Measured on v0.3.5, a fresh Mac: macOS never prompted for the
+        microphone the voice opened, never listed heygent under
+        Microphone, and every hold heard zeros with microphone_granted
+        None. Not-determined is asked for with macOS's own prompt - no
+        pane, which would show no row to turn on - on every launch until
+        it is answered."""
+        self.voice["microphone"] = None
+        self.assertEqual(self.ask(), [])
+        self.assertEqual(self.registered, ["microphone"])
+        self.assertEqual(self.opened, [])
+        self.ask()
+        self.assertEqual(self.registered, ["microphone", "microphone"])
+
+    def test_a_microphone_with_an_answer_is_not_asked_again(self) -> None:
+        self.ask()
+        self.assertEqual(self.registered, [], "granted: nothing to ask")
+        self.voice["microphone"] = False
+        self.ask()
+        self.assertEqual(self.registered, ["microphone"],
+                         "denied: registered once for its pane, not twice")
+
+    def test_a_subset_without_the_microphone_does_not_ask_for_it(self) -> None:
+        self.voice["microphone"] = None
+        self.ask(grants=("accessibility", "screen_recording"))
+        self.assertNotIn("microphone", self.registered)
 
     def test_a_subset_asks_for_that_subset_alone(self) -> None:
         """A voice-only caller asks for the voice grants and leaves the
