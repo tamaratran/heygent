@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # One-line installer for the Voice Conductor:
 #
-#   curl -fsSL https://raw.githubusercontent.com/tamaratran/voice-agent/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/tamaratran/heygent/main/install.sh | bash
 #
 # It clones (or updates) the app under ~/.voice-conductor/app, installs the
 # tools the launcher needs (uv, tmux, Claude Code), and puts a `conduct`
 # command on PATH. Safe to run again: every step is a no-op once done.
 set -euo pipefail
 
-REPO="${VOICE_CONDUCTOR_REPO:-https://github.com/tamaratran/voice-agent.git}"
+REPO="${VOICE_CONDUCTOR_REPO:-https://github.com/tamaratran/heygent.git}"
 APP_DIR="${VOICE_CONDUCTOR_HOME:-$HOME/.voice-conductor}/app"
 BIN_DIR="$HOME/.local/bin"
 
