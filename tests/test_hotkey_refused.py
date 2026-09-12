@@ -40,20 +40,38 @@ TERMINAL = {"__CFBundleIdentifier": "com.apple.Terminal",
 
 
 class HotkeyNamesTheGrant(unittest.TestCase):
-    """hotkey.py, run against a Quartz whose tap creation says no."""
+    """hotkey.py, run against a Quartz that says no - either way it can.
 
-    def refused_line(self) -> dict:
+    Some macOS versions refuse the tap (CGEventTapCreate returns None);
+    macOS 26 hands over a tap that never fires (measured: a Finder-run
+    heygent without Input Monitoring saw no Fn at all, and said nothing).
+    The preflight call tells both apart from a granted one, before the
+    tap is even asked for.
+    """
+
+    def run_main(self, preflight, tap) -> tuple[int, list[dict], list]:
+        created = []
+
+        def create(*args):
+            created.append(args)
+            return tap
         quartz = types.SimpleNamespace(
-            CGEventTapCreate=lambda *a: None,
+            CGEventTapCreate=create,
             kCGSessionEventTap=1, kCGHeadInsertEventTap=0,
             kCGEventTapOptionListenOnly=1, kCGEventFlagsChanged=12,
             CGEventMaskBit=lambda bit: 1 << bit)
+        if preflight is not None:
+            quartz.CGPreflightListenEventAccess = lambda: preflight
         out = io.StringIO()
         with mock.patch.dict(sys.modules, {"Quartz": quartz}), \
                 mock.patch.object(sys, "stdout", out):
             code = hotkey.main()
-        self.assertEqual(code, 1)
         lines = [json.loads(line) for line in out.getvalue().splitlines()]
+        return code, lines, created
+
+    def refused_line(self, preflight=True, tap=None) -> dict:
+        code, lines, _ = self.run_main(preflight, tap)
+        self.assertEqual(code, 1)
         self.assertEqual(len(lines), 1, "the refusal and nothing else")
         return lines[0]
 
@@ -67,6 +85,25 @@ class HotkeyNamesTheGrant(unittest.TestCase):
         """The old hint said "your terminal app"; from Finder there is
         none, and the row to turn on is heygent's."""
         self.assertNotIn("terminal", self.refused_line()["hint"].lower())
+
+    def test_a_failed_preflight_is_the_same_refusal(self) -> None:
+        """The tap macOS 26 would have handed over fires for nothing, so
+        it is never made: the answer is the preflight's."""
+        code, lines, created = self.run_main(preflight=False, tap=object())
+        self.assertEqual(code, 1)
+        self.assertEqual(lines[0]["error"], "event tap refused")
+        self.assertEqual(lines[0]["grant"], "input_monitoring")
+        self.assertEqual(created, [], "no tap asked for without the grant")
+
+    def test_without_a_preflight_call_the_tap_decides(self) -> None:
+        """Older bindings have no CGPreflightListenEventAccess; the refused
+        tap is still caught."""
+        event = self.refused_line(preflight=None, tap=None)
+        self.assertEqual(event["grant"], "input_monitoring")
+
+    def test_a_granted_preflight_goes_on_to_make_the_tap(self) -> None:
+        _, _, created = self.run_main(preflight=True, tap=None)
+        self.assertEqual(len(created), 1)
 
 
 @unittest.skipIf(voice_agent is None, "the audio stack is not installed")
