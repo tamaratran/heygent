@@ -147,6 +147,44 @@ class Dialogs(unittest.TestCase):
             dialogs.tell("hello")
         self.assertEqual(alerts, ["hello"])
 
+    def test_an_unexplained_stop_is_a_dialog_with_the_log_a_click_away(self):
+        """A crash from Finder used to be a traceback in a file nobody
+        knew about; now it is said, and Show Log opens that file. On a
+        terminal the traceback that follows is the explanation."""
+        shown = []
+        opened = []
+        with mock.patch.object(dialogs, "has_terminal", return_value=False), \
+             mock.patch.object(dialogs, "alert",
+                               lambda text, buttons, **k:
+                               shown.append((text, buttons)) or "Show Log"), \
+             mock.patch.object(dialogs, "open_url",
+                               lambda url, **k: opened.append(url) or True):
+            dialogs.stopped("RuntimeError: no overlay", "/x/app-launch.log")
+        (text, buttons), = shown
+        self.assertIn("heygent stopped: RuntimeError: no overlay", text)
+        self.assertIn("/x/app-launch.log", text)
+        self.assertEqual(buttons, ("Quit", "Show Log"))
+        self.assertEqual(opened, ["/x/app-launch.log"])
+
+        shown.clear()
+        opened.clear()
+        with mock.patch.object(dialogs, "has_terminal", return_value=False), \
+             mock.patch.object(dialogs, "alert",
+                               lambda text, buttons, **k:
+                               shown.append(text) or "Quit"), \
+             mock.patch.object(dialogs, "open_url",
+                               lambda url, **k: opened.append(url) or True):
+            dialogs.stopped("boom", None)
+        self.assertEqual(len(shown), 1)
+        self.assertEqual(opened, [])
+
+        shown.clear()
+        with mock.patch.object(dialogs, "has_terminal", return_value=True), \
+             mock.patch.object(dialogs, "alert",
+                               lambda text, buttons, **k: shown.append(text)):
+            dialogs.stopped("boom", "/x/app-launch.log")
+        self.assertEqual(shown, [])
+
     def test_the_text_and_buttons_are_arguments_not_script(self):
         """Nothing the user typed, or an error message quoting it, is
         ever spliced into AppleScript source."""

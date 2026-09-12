@@ -60,8 +60,8 @@ from voice_agent import (OPENAI_KEYS_URL, HotkeyListener, Ui, VoiceAgent,
                          ask_for_api_key, load_env, log, withhold_api_key)
 
 from conductor import (JsonlSink, LoggingSink, ObservabilityBus,
-                       application_log, configure_logging, current_run,
-                       drain_subprocess_stderr, instance,
+                       application_log, configure_logging, current_log_path,
+                       current_run, drain_subprocess_stderr, instance,
                        install_asyncio_exception_handler,
                        start_loop_stall_monitor)
 from conductor import claude_auth, dialogs
@@ -1408,8 +1408,24 @@ async def main() -> int:
     return 0
 
 
+def crash_log() -> Path | None:
+    """Where a Finder user can read why the app stopped: the launcher's
+    log, which has the traceback that went to stderr, else this run's
+    JSONL, else nothing yet."""
+    jsonl = current_log_path()
+    if jsonl is None:
+        return None
+    launch = jsonl.parent / "app-launch.log"
+    return launch if launch.exists() else jsonl
+
+
 if __name__ == "__main__":
     try:
         sys.exit(asyncio.run(main()))
     except KeyboardInterrupt:
         sys.exit(0)
+    except Exception as exc:
+        # main() has logged it (app.crashed); the traceback follows on
+        # stderr. From Finder neither is seen, so say it in a dialog.
+        dialogs.stopped(f"{type(exc).__name__}: {exc}", crash_log())
+        raise

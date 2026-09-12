@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 from .observability import application_log
 
@@ -85,6 +86,26 @@ def tell(text: str, *, run=subprocess.run) -> None:
     print(text, file=sys.stderr, flush=True)
     if not has_terminal():
         alert(text, run=run)
+
+
+STOPPED = ("heygent stopped: {reason}\n\nThis was not supposed to happen. "
+           "The log has the details - Show Log opens it; sending it along "
+           "with a report helps.")
+
+
+def stopped(reason: str, log_path: str | Path | None, *,
+            run=subprocess.run) -> None:
+    """The app is quitting for a reason nothing else has explained. On a
+    terminal the traceback that follows says it; from Finder this
+    dialog is the only place it can be said, with the log a click
+    away."""
+    if has_terminal():
+        return
+    text = STOPPED.format(reason=reason)
+    if log_path is not None:
+        text += f"\n\n{log_path}"
+    if alert(text, ("Quit", "Show Log"), run=run) == "Show Log" and log_path:
+        open_url(str(log_path), run=run)
 
 
 def open_url(url: str, *, run=subprocess.run) -> bool:

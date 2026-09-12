@@ -189,6 +189,55 @@ class TheBundle(unittest.TestCase):
         self.assertEqual((release / ".env").read_text(),
                          "OPENAI_API_KEY=newer\n")
 
+    def test_a_conduct_sh_that_never_started_heygent_is_a_dialog(self):
+        """uv failing to fetch Python or the dependencies is a non-zero
+        exit with nothing on screen; the launcher says so, with the
+        log's last lines. Once conduct.py has printed its run id it
+        explains its own exits, so no second dialog then."""
+        home = Path(self.scratch.name) / "home"
+        app_dir = home / "app"
+        app_dir.mkdir(parents=True)
+        conduct = app_dir / "conduct.sh"
+        (app_dir / app_bundle.STAMP).write_text("v")
+        fake_bin = Path(self.scratch.name) / "bin"
+        fake_bin.mkdir()
+        dialogs = Path(self.scratch.name) / "dialogs.log"
+        for tool in ("uv", "tmux", "claude"):
+            (fake_bin / tool).write_text("#!/bin/bash\n")
+            (fake_bin / tool).chmod(0o755)
+        (fake_bin / "osascript").write_text(
+            f"#!/bin/bash\ncat >/dev/null\nprintf '%s\\n' \"$@\" >> '{dialogs}'\n")
+        (fake_bin / "osascript").chmod(0o755)
+        bundle = Path(self.scratch.name) / "heygent.app" / "Contents"
+        (bundle / "Resources" / "app").mkdir(parents=True)
+        (bundle / "Resources" / "app" / app_bundle.STAMP).write_text("v")
+        (bundle / "MacOS").mkdir()
+        launcher = bundle / "MacOS" / "heygent"
+        launcher.write_text(app_bundle.STANDALONE_LAUNCHER.replace(
+            "{stamp}", app_bundle.STAMP).replace(
+            "/opt/homebrew/bin:/usr/local/bin", str(fake_bin)))
+        env = {"HOME": str(home), "VOICE_CONDUCTOR_HOME": str(home),
+               "PATH": "/usr/bin:/bin"}
+
+        def run(script):
+            conduct.write_text("#!/bin/bash\n" + script)
+            conduct.chmod(0o755)
+            dialogs.write_text("")
+            return subprocess.run(["bash", str(launcher)], env=env,
+                                  timeout=30).returncode
+
+        self.assertEqual(run("echo 'error: No solution found'\nexit 2\n"), 2)
+        shown = dialogs.read_text()
+        self.assertIn("No solution found", shown)
+        self.assertIn(str(home / "logs" / "app-launch.log"), shown)
+
+        self.assertEqual(run("echo 'run id: r1'\necho refused >&2\nexit 1\n"),
+                         1)
+        self.assertEqual(dialogs.read_text(), "", "conduct.py's to explain")
+
+        self.assertEqual(run("echo 'run id: r2'\n"), 0)
+        self.assertEqual(dialogs.read_text(), "")
+
     def test_a_repo_without_conduct_sh_is_refused(self):
         bare = Path(self.scratch.name) / "bare"
         bare.mkdir()
