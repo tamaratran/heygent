@@ -152,8 +152,10 @@ def this_app(env=None) -> str:
 
 def probe_voice_grants(wanted=VOICE_GRANTS) -> dict:
     """Microphone and Input Monitoring, probed through the system's own
-    answers. None where the answer is unknowable (no bindings, another
-    platform): unknown is not missing, macOS will ask on first use.
+    answers. None where there is no answer yet: the microphone never
+    asked for, or no bindings / another platform. Unknown is not missing -
+    no pane can fix it - but a microphone never asked for is asked for at
+    launch (see ask_for_missing_grants).
     """
     grants: dict[str, bool | None] = {}
     if "input_monitoring" in wanted:
@@ -169,9 +171,9 @@ def probe_voice_grants(wanted=VOICE_GRANTS) -> dict:
             from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
             status = AVCaptureDevice.authorizationStatusForMediaType_(
                 AVMediaTypeAudio)
-            # 0 is not-determined: macOS itself asks the first time the
-            # microphone is opened, so only an explicit denial (2) or a
-            # restriction (1) is a pane's problem.
+            # 0 is not-determined: never asked. Only an explicit denial
+            # (2) or a restriction (1) is a pane's problem; not-determined
+            # is asked for directly at launch.
             grants["microphone"] = None if status == 0 else status == 3
         except Exception:
             pass
@@ -180,8 +182,8 @@ def probe_voice_grants(wanted=VOICE_GRANTS) -> dict:
 
 def microphone_denied(voice_probe=probe_voice_grants) -> bool:
     """Whether macOS has said no to this app's microphone. Only an
-    explicit denial: unknown, or not yet asked, is left to macOS's own
-    prompt on first use."""
+    explicit denial: not yet asked is asked for at launch, and unknown
+    has nothing to refuse."""
     return voice_probe(("microphone",)).get("microphone") is False
 
 
@@ -284,13 +286,21 @@ def register_with_macos(grant: str) -> None:
     A pane lists only the apps that have asked for its grant; until this
     app has, there is no row to turn on - the user was sent to
     Accessibility and found ChatGPT, iTerm and Terminal there and nothing
-    of ours. Accessibility, Input Monitoring and Screen Recording each
-    have a call that asks (adding the row, and putting up the system's
-    own prompt, which offers the same pane); the Microphone row appears
-    the first time the microphone is opened, so it needs nothing here.
+    of ours. Each grant has a call that asks (adding the row, and putting
+    up the system's own prompt). The Microphone used to be left to the
+    first time the microphone was opened; that open happens in a child
+    process, and on a fresh Mac it put up no prompt and added no row -
+    the app heard only zeros (measured on v0.3.5, microphone_granted
+    None on every hold). So it is asked for like the others.
     """
     try:
-        if grant == "accessibility":
+        if grant == "microphone":
+            from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
+            # The answer arrives on its own: the voice probes the grant
+            # again on the first hold, and a denial refuses next launch.
+            AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+                AVMediaTypeAudio, lambda granted: None)
+        elif grant == "accessibility":
             from ApplicationServices import (AXIsProcessTrustedWithOptions,
                                              kAXTrustedCheckOptionPrompt)
             AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: True})
@@ -438,6 +448,15 @@ def ask_for_missing_grants(home: Path, *, worker_app: str | None = None,
                         "introduced the permissions on first launch",
                         grants=list(wanted))
         introduced |= set(wanted)
+    if "microphone" in wanted and \
+            voice_probe(("microphone",)).get("microphone") is None:
+        # Never asked: macOS's own prompt, not a pane - there is no row
+        # to turn on until this app has asked. Every launch until it is
+        # answered; a no-op without the bindings.
+        register("microphone")
+        application_log("conductor", "permissions.requested",
+                        "asked macOS to prompt for the Microphone",
+                        grant="microphone")
     missing = missing_grants(driver_factory, voice_probe, wanted)
     for grant in wanted:
         if grant not in missing and grant in asked:

@@ -52,6 +52,16 @@ from pathlib import Path
 APP_NAME = "heygent"
 BUNDLE_ID = "ai.heygent.conductor"
 
+# Signed into the app on every build. A Developer ID build carries the
+# hardened runtime, and under it an app with no audio-input entitlement
+# is not allowed the microphone at all: macOS shows no prompt, never
+# lists the app under Privacy & Security > Microphone, and CoreAudio
+# delivers exact zeros. Measured on v0.3.5 (runtime flag, no
+# entitlements) on a fresh Mac: every Fn hold logged
+# voice.mic_heard_nothing with microphone_granted None, and there was no
+# switch to turn on. NSMicrophoneUsageDescription alone is not enough.
+ENTITLEMENTS = {"com.apple.security.device.audio-input": True}
+
 # Finder launches with almost no PATH; the launcher restores the places
 # conduct.sh's tools (uv, tmux, claude) actually live.
 LAUNCHER = """#!/bin/bash
@@ -360,7 +370,13 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
     # launch it.
     codesign = shutil.which("codesign")
     if codesign is not None:
-        command = [codesign, "--force", "--deep"]
+        # Outside the bundle: a file inside it would be sealed as a
+        # resource of the very signature it describes.
+        entitlements = dest / f"{APP_NAME}.entitlements"
+        with entitlements.open("wb") as handle:
+            plistlib.dump(ENTITLEMENTS, handle)
+        command = [codesign, "--force", "--deep",
+                   "--entitlements", str(entitlements)]
         if identity != "-":
             entitlements = dest / "heygent.entitlements"
             with entitlements.open("wb") as handle:
@@ -368,8 +384,11 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
             command += ["--options", "runtime", "--timestamp",
                         "--entitlements", str(entitlements)]
         command += ["--sign", identity, str(app)]
-        done = subprocess.run(command, capture_output=True, text=True,
-                              timeout=600)
+        try:
+            done = subprocess.run(command, capture_output=True, text=True,
+                                  timeout=600)
+        finally:
+            entitlements.unlink(missing_ok=True)
         if done.returncode != 0:
             raise RuntimeError(f"codesign failed: {done.stderr.strip()}")
     return app

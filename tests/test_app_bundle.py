@@ -278,6 +278,49 @@ class TheBundle(unittest.TestCase):
         self.build()
         self.build()
 
+    @unittest.skipUnless(shutil.which("codesign"), "needs codesign")
+    def test_the_signed_app_may_use_the_microphone(self):
+        """Measured on v0.3.5: hardened runtime and no entitlements, so
+        macOS gave the app no microphone - no prompt, no row under
+        Privacy & Security > Microphone, only zeros. The entitlement is
+        in the signature itself, and nothing is left behind in dest."""
+        with mock.patch.object(app_bundle, "make_icns", return_value=False):
+            app = app_bundle.build_bundle(self.repo, self.dest)
+        done = subprocess.run(
+            ["codesign", "-d", "--entitlements", "-", "--xml", str(app)],
+            capture_output=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        signed = plistlib.loads(done.stdout)
+        self.assertIs(signed.get("com.apple.security.device.audio-input"),
+                      True)
+        self.assertEqual(sorted(p.name for p in self.dest.iterdir()),
+                         ["heygent.app"])
+
+    def test_the_runtime_signature_carries_the_entitlements(self):
+        """The Developer ID path, without the identity: the command a
+        release signs with has the hardened runtime and the entitlements
+        together."""
+        seen = {}
+
+        def run(command, **kwargs):
+            if "--entitlements" in command:
+                seen["command"] = list(command)
+                path = Path(command[command.index("--entitlements") + 1])
+                with path.open("rb") as handle:
+                    seen["entitlements"] = plistlib.load(handle)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with mock.patch.object(app_bundle, "make_icns", return_value=False), \
+             mock.patch.object(app_bundle, "compile_stub",
+                               return_value=False), \
+             mock.patch.object(app_bundle.shutil, "which",
+                               return_value="/usr/bin/codesign"), \
+             mock.patch.object(app_bundle.subprocess, "run", side_effect=run):
+            app_bundle.build_bundle(self.repo, self.dest,
+                                    identity="Developer ID Application: X")
+        self.assertIn("runtime", seen["command"])
+        self.assertEqual(seen["entitlements"], app_bundle.ENTITLEMENTS)
+
 
 if __name__ == "__main__":
     unittest.main()
