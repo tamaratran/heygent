@@ -36,6 +36,36 @@ class TheBundle(unittest.TestCase):
         self.assertEqual(info["CFBundleExecutable"], "heygent")
         self.assertIn("NSMicrophoneUsageDescription", info)
 
+    def test_a_developer_id_signature_carries_the_mic_entitlement(self):
+        """Under the hardened runtime TCC denies the microphone without
+        com.apple.security.device.audio-input - and does not prompt, so
+        v0.3.5 heard only silence. Ad-hoc (no hardened runtime) needs
+        none."""
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with mock.patch.object(app_bundle, "make_icns", return_value=False), \
+             mock.patch.object(app_bundle.shutil, "which",
+                               lambda name: "/usr/bin/codesign"
+                               if name == "codesign" else None), \
+             mock.patch.object(app_bundle.subprocess, "run", run):
+            app_bundle.build_bundle(self.repo, self.dest,
+                                    identity="Developer ID Application: X")
+            adhoc = self.dest / "adhoc"
+            adhoc.mkdir()
+            app_bundle.build_bundle(self.repo, adhoc)
+        signed, unsigned = [c for c in calls if c[0] == "/usr/bin/codesign"]
+        self.assertIn("--options", signed)
+        with Path(signed[signed.index("--entitlements") + 1]) \
+                .open("rb") as handle:
+            granted = plistlib.load(handle)
+        self.assertTrue(granted["com.apple.security.device.audio-input"])
+        self.assertTrue(granted["com.apple.security.automation.apple-events"])
+        self.assertNotIn("--entitlements", unsigned)
+
     def test_the_launcher_execs_the_repos_conduct_sh(self):
         app = self.build()
         launcher = app / "Contents" / "MacOS" / "heygent"

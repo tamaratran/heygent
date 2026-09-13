@@ -298,6 +298,18 @@ def make_icns(png: Path, icns: Path) -> bool:
         return done.returncode == 0 and icns.is_file()
 
 
+# The hardened runtime (which notarization requires) denies the microphone
+# and Apple Events without these - and TCC then never even prompts:
+# "Prompting policy for hardened runtime; service: kTCCServiceMicrophone
+# requires entitlement com.apple.security.device.audio-input but it is
+# missing" (measured 2026-09-12, v0.3.5: capsule up, only silence heard).
+# The usage strings in Info.plist are necessary but not sufficient.
+ENTITLEMENTS = {
+    "com.apple.security.device.audio-input": True,
+    "com.apple.security.automation.apple-events": True,
+}
+
+
 def build_bundle(repo: Path, dest: Path, identity: str = "-",
                  standalone: bool = False) -> Path:
     """Assemble `heygent.app` under dest and return its path.
@@ -350,7 +362,11 @@ def build_bundle(repo: Path, dest: Path, identity: str = "-",
     if codesign is not None:
         command = [codesign, "--force", "--deep"]
         if identity != "-":
-            command += ["--options", "runtime", "--timestamp"]
+            entitlements = dest / "heygent.entitlements"
+            with entitlements.open("wb") as handle:
+                plistlib.dump(ENTITLEMENTS, handle)
+            command += ["--options", "runtime", "--timestamp",
+                        "--entitlements", str(entitlements)]
         command += ["--sign", identity, str(app)]
         done = subprocess.run(command, capture_output=True, text=True,
                               timeout=600)
