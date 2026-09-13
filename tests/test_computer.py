@@ -910,6 +910,13 @@ class CreateTaskTest(unittest.TestCase):
                              return_value=(True, ""))
         self.computer_state = patcher.start()
         self.addCleanup(patcher.stop)
+        # A refusal asks macOS to list the app in each missing pane; the
+        # real one would put up this machine's own requests.
+        patcher = mock.patch(
+            "conductor.gui_permissions.register_missing_computer_grants",
+            return_value=[])
+        self.registered = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -945,11 +952,49 @@ class CreateTaskTest(unittest.TestCase):
         self.assertIn("then ask again", str(caught.exception))
         self.assertEqual(self.runtime.calls, [])
 
+    def test_a_refusal_first_puts_the_app_in_the_panes(self) -> None:
+        """Screen Recording is not asked for at launch; the first
+        computer-use task is where heygent's row has to appear, before
+        the user is sent to turn it on."""
+        self.computer_state.return_value = (False, "needs Screen Recording")
+        with self.assertRaises(RuntimeError):
+            asyncio.run(self.conductor.handle_action(
+                "create_task", {"project": "posely", "title": "Click it",
+                                "goal": "click", "computer": True}))
+        self.registered.assert_called_once_with()
+
+    def test_a_refusal_names_the_worker_app_that_needs_it_too(self) -> None:
+        """Devin Review on #37: with workers in cmux, macOS grants cmux
+        separately, and nothing here can probe it."""
+        self.conductor.worker_app = "cmux"
+        self.computer_state.return_value = (False, "needs Screen Recording")
+        with self.assertRaises(RuntimeError) as caught:
+            asyncio.run(self.conductor.handle_action(
+                "create_task", {"project": "posely", "title": "Click it",
+                                "goal": "click", "computer": True}))
+        self.assertIn("the workers run in cmux", str(caught.exception))
+        self.assertIn("add cmux with +", str(caught.exception))
+
+    def test_without_a_worker_app_the_refusal_names_none(self) -> None:
+        self.computer_state.return_value = (False, "needs Screen Recording")
+        with self.assertRaises(RuntimeError) as caught:
+            asyncio.run(self.conductor.handle_action(
+                "create_task", {"project": "posely", "title": "Click it",
+                                "goal": "click", "computer": True}))
+        self.assertNotIn("cmux", str(caught.exception))
+
+    def test_a_granted_computer_task_asks_macos_for_nothing(self) -> None:
+        asyncio.run(self.conductor.handle_action(
+            "create_task", {"project": "posely", "title": "Click it",
+                            "goal": "click", "computer": True}))
+        self.registered.assert_not_called()
+
     def test_an_ordinary_task_never_probes_the_screen(self) -> None:
         asyncio.run(self.conductor.handle_action(
             "create_task", {"project": "posely", "title": "Fix it",
                             "goal": "fix"}))
         self.computer_state.assert_not_called()
+        self.registered.assert_not_called()
 
     def test_the_default_stays_hands_off(self) -> None:
         task = asyncio.run(self.conductor.handle_action(

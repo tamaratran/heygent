@@ -187,6 +187,9 @@ class GlobalConductor:
         if surface is not None and "transcript" not in self.surfaces:
             self.surfaces["transcript"] = surface
         self.surface_preference = surface_preference or SurfacePreference()
+        # The app hosting the workers when it is not this one (cmux); set
+        # by the launcher. macOS grants it computer use separately.
+        self.worker_app: str | None = None
         self._conductors: dict[str, Conductor] = {}
         # Single-flight guards: concurrent triggers (watchdog, notification
         # click, voice follow-up) share one operation, never spawn duplicates.
@@ -1323,6 +1326,17 @@ class GlobalConductor:
         if computer:
             can, why = computer_state()
             if not can:
+                # Before the refusal tells the user where to turn it on:
+                # the row has to be in that pane. Screen Recording is not
+                # asked for at launch, so this is its first ask.
+                from .gui_permissions import register_missing_computer_grants
+                await asyncio.to_thread(register_missing_computer_grants)
+                if self.worker_app:
+                    # Its grant cannot be probed from here, and once ours
+                    # arrives this refusal never comes again to say so.
+                    why += (f"; the workers run in {self.worker_app}, which "
+                            f"needs the same grants - add {self.worker_app} "
+                            f"with + in each pane too")
                 raise RuntimeError(
                     f"cannot start a computer-use worker yet: {why}")
         conductor = self._conductor(project_id)
