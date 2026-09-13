@@ -509,6 +509,10 @@ def build_conductor(home: Path,
                                                boss_transport))
     if isinstance(built.manager, PtyManagerBackend):
         built.boss_store = built.manager.store
+    # The app that owns the workers' processes when it is not heygent: a
+    # computer-use refusal names it, since macOS grants it separately.
+    built.worker_app = ("cmux" if chosen_surface(worker_surface) == "cmux"
+                        else None)
     return built
 
 
@@ -713,11 +717,16 @@ async def main() -> int:
     # pane for each grant this terminal lacks, once, and says which apps
     # to add. Nothing at all when everything is granted.
     # Screen Recording waits for the first computer-use task, which asks
-    # for it itself (see gui_permissions.LAUNCH_GRANTS).
+    # for it itself (see gui_permissions.LAUNCH_GRANTS) - unless the
+    # workers run in cmux. That grant is cmux's too, cannot be probed from
+    # here, and is named only by this ask; a later ask that heygent already
+    # holds would never mention it, and cmux's screenshots stay empty.
+    worker_app = ("cmux" if chosen_surface(args.worker_surface) == "cmux"
+                  else None)
     asks = await asyncio.to_thread(
-        ask_for_missing_grants, home, grants=LAUNCH_GRANTS,
-        worker_app="cmux" if chosen_surface(args.worker_surface) == "cmux"
-        else None,
+        ask_for_missing_grants, home,
+        grants=None if worker_app else LAUNCH_GRANTS,
+        worker_app=worker_app,
         dialog=None if dialogs.has_terminal() else dialogs.alert)
     # A Microphone grant macOS has denied is not one the voice can do
     # without: the stream opens and delivers zeros, so the app looks

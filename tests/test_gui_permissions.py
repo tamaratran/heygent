@@ -205,8 +205,17 @@ class ScreenRecordingIsAskedForWhenItMatters(Base):
 
     def test_conduct_asks_for_the_launch_grants(self) -> None:
         source = (ROOT / "conduct.py").read_text()
-        self.assertIn("ask_for_missing_grants, home, grants=LAUNCH_GRANTS",
-                      source)
+        self.assertIn("grants=None if worker_app else LAUNCH_GRANTS", source)
+
+    def test_with_cmux_workers_launch_still_names_cmux_for_the_screen(
+            self) -> None:
+        """Devin Review on #37: cmux's Screen Recording grant cannot be
+        probed from the conductor and was named only by the launch ask.
+        With cmux hosting the workers, launch keeps asking for it."""
+        self.driver = FakeDriver(screen_recording=False)
+        asks = self.ask(worker_app="cmux", grants=None)
+        self.assertEqual([a.grant for a in asks], ["screen_recording"])
+        self.assertIn("cmux", self.said[-1])
 
     def test_the_request_connects_to_the_window_server_first(self) -> None:
         calls = []
