@@ -73,6 +73,11 @@ NEEDS = {"microphone": "Voice", "input_monitoring": "The Fn hotkey",
 # belong to the terminal alone.
 COMPUTER_GRANTS = ("accessibility", "screen_recording")
 VOICE_GRANTS = ("microphone", "input_monitoring")
+# What the app asks for as it starts. Screen Recording is left to the
+# first computer-use task (register_missing_computer_grants): nothing
+# else uses it, and a Settings pane at first launch for a feature most
+# people never start is one more thing between them and talking to it.
+LAUNCH_GRANTS = ("microphone", "input_monitoring", "accessibility")
 # What has to be restarted for the grant to take effect, from a terminal.
 RESTARTS = {"microphone": "restart conduct.sh",
             "input_monitoring": "restart your terminal (macOS applies "
@@ -278,6 +283,32 @@ def open_pane(url: str) -> bool:
     return done.returncode == 0
 
 
+# CGRequestScreenCaptureAccess, in a process connected to the window
+# server. Called from a process with no such connection - the conductor
+# is plain Python - it returns False at once and never reaches tccd, so
+# macOS never lists the app under Screen & System Audio Recording.
+# Measured 2026-09-13 with two fresh bundle ids: the plain call logged
+# no kTCCServiceScreenCapture request at all; the same call after
+# NSApplication.sharedApplication() logged "Notifying for access
+# kTCCServiceScreenCapture" for the app, which is what adds its row (the
+# service never prompts; the row arrives switched off). A child process,
+# because NSApplication belongs on a main thread and the ask runs off
+# the loop in a worker thread; the child's responsible app is still ours.
+SCREEN_CAPTURE_REQUEST = (
+    "from AppKit import NSApplication\n"
+    "NSApplication.sharedApplication()\n"
+    "from Quartz import CGRequestScreenCaptureAccess\n"
+    "CGRequestScreenCaptureAccess()\n")
+
+
+def _request_screen_capture(run=subprocess.run) -> None:
+    done = run([sys.executable, "-c", SCREEN_CAPTURE_REQUEST],
+               capture_output=True, text=True, timeout=30)
+    if done.returncode != 0:
+        raise RuntimeError(done.stderr.strip()[-300:] or
+                           f"exited {done.returncode}")
+
+
 def register_with_macos(grant: str) -> None:
     """Have macOS list this app in the grant's pane.
 
@@ -298,12 +329,33 @@ def register_with_macos(grant: str) -> None:
             from Quartz import CGRequestListenEventAccess
             CGRequestListenEventAccess()
         elif grant == "screen_recording":
-            from Quartz import CGRequestScreenCaptureAccess
-            CGRequestScreenCaptureAccess()
+            _request_screen_capture()
     except Exception:
         application_log("conductor", "permissions.request_failed",
                         f"could not ask macOS for {LABELS[grant]}",
                         severity="warning", exc_info=True, grant=grant)
+
+
+def register_missing_computer_grants(driver_factory=computer.make_driver,
+                                     register=register_with_macos,
+                                     platform: str | None = None
+                                     ) -> list[str]:
+    """The moment a computer-use task is refused for want of a grant: have
+    macOS list this app in each missing grant's pane, so the switch the
+    user is told to turn on is there. Screen Recording is not asked for
+    at launch (LAUNCH_GRANTS), so this is where its row first appears.
+    Returns the grants it asked for."""
+    if (platform or sys.platform) != "darwin":
+        return []
+    missing = missing_grants(driver_factory, lambda wanted: {},
+                             COMPUTER_GRANTS)
+    for grant in missing:
+        register(grant)
+        application_log("conductor", "permissions.requested",
+                        f"asked macOS to list {OWN_APP} under "
+                        f"{LABELS[grant]} for a computer-use task",
+                        grant=grant)
+    return missing
 
 
 def _load(path: Path) -> tuple[dict, set]:

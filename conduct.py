@@ -12,6 +12,9 @@
 #   # way tmux/cmux setup is documented rather than left to the user.
 #   "pyobjc-framework-Quartz>=10,<13; sys_platform == 'darwin'",
 #   "pyobjc-framework-ApplicationServices>=10,<13; sys_platform == 'darwin'",
+#   # AppKit: the Screen Recording ask connects to the window server
+#   # first, or macOS never lists the app (gui_permissions).
+#   "pyobjc-framework-Cocoa>=10,<13; sys_platform == 'darwin'",
 #   # The startup permission check probes the Microphone grant through
 #   # AVFoundation, the same way computer use probes its two.
 #   "pyobjc-framework-AVFoundation>=10,<13; sys_platform == 'darwin'",
@@ -72,7 +75,7 @@ from conductor.conductor_mcp import ConductorMcp
 from conductor.boss_session import BossSessionStore, render_timeline
 from conductor.pty_manager import PtyManagerBackend
 from conductor.global_conductor import GlobalConductor
-from conductor.gui_permissions import (ask_for_missing_grants,
+from conductor.gui_permissions import (LAUNCH_GRANTS, ask_for_missing_grants,
                                        explain_refusal, microphone_denied)
 from conductor.plain_text import plain_text
 from conductor.notifications import (NotificationService,
@@ -709,8 +712,10 @@ async def main() -> int:
     # clicks vanish. macOS never asks on its own; the conductor opens the
     # pane for each grant this terminal lacks, once, and says which apps
     # to add. Nothing at all when everything is granted.
+    # Screen Recording waits for the first computer-use task, which asks
+    # for it itself (see gui_permissions.LAUNCH_GRANTS).
     asks = await asyncio.to_thread(
-        ask_for_missing_grants, home,
+        ask_for_missing_grants, home, grants=LAUNCH_GRANTS,
         worker_app="cmux" if chosen_surface(args.worker_surface) == "cmux"
         else None,
         dialog=None if dialogs.has_terminal() else dialogs.alert)

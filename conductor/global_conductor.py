@@ -1323,6 +1323,11 @@ class GlobalConductor:
         if computer:
             can, why = computer_state()
             if not can:
+                # Before the refusal tells the user where to turn it on:
+                # the row has to be in that pane. Screen Recording is not
+                # asked for at launch, so this is its first ask.
+                from .gui_permissions import register_missing_computer_grants
+                await asyncio.to_thread(register_missing_computer_grants)
                 raise RuntimeError(
                     f"cannot start a computer-use worker yet: {why}")
         conductor = self._conductor(project_id)

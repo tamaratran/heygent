@@ -13,9 +13,12 @@ Run with:  python3 -m unittest tests.test_gui_permissions -v
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from conductor import gui_permissions
 from conductor.computer import ComputerError
@@ -176,6 +179,97 @@ class StayingHarmless(Base):
         self.assertEqual(
             ask_for_missing_grants.__kwdefaults__["register"],
             gui_permissions.register_with_macos)
+
+
+class ScreenRecordingIsAskedForWhenItMatters(Base):
+    """v0.3.6 on a fresh Mac: heygent logged "asked for Screen Recording"
+    and never appeared under Screen & System Audio Recording. The request
+    came from a process with no window-server connection and never
+    reached tccd. Measured with two fresh bundle ids: the plain call
+    logged no request; after NSApplication.sharedApplication() it logged
+    "Notifying for access kTCCServiceScreenCapture" for the app."""
+
+    def test_launch_does_not_ask_for_screen_recording(self) -> None:
+        self.driver = FakeDriver(screen_recording=False)
+        asks = self.ask(grants=gui_permissions.LAUNCH_GRANTS)
+        self.assertEqual(asks, [])
+        self.assertNotIn("screen_recording", self.registered)
+        self.assertNotIn(PANES["screen_recording"], self.opened)
+
+    def test_launch_still_asks_for_the_rest(self) -> None:
+        self.driver = FakeDriver(accessibility=False, screen_recording=False)
+        self.voice["input_monitoring"] = False
+        asks = self.ask(grants=gui_permissions.LAUNCH_GRANTS)
+        self.assertEqual([a.grant for a in asks],
+                         ["input_monitoring", "accessibility"])
+
+    def test_conduct_asks_for_the_launch_grants(self) -> None:
+        source = (ROOT / "conduct.py").read_text()
+        self.assertIn("ask_for_missing_grants, home, grants=LAUNCH_GRANTS",
+                      source)
+
+    def test_the_request_connects_to_the_window_server_first(self) -> None:
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        gui_permissions._request_screen_capture(run=run)
+        (argv,) = calls
+        self.assertEqual(argv[:2], [sys.executable, "-c"])
+        code = argv[2]
+        self.assertLess(code.index("NSApplication.sharedApplication()"),
+                        code.index("CGRequestScreenCaptureAccess()"))
+
+    def test_a_request_that_fails_is_raised_to_be_logged(self) -> None:
+        def run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1, "",
+                                               "ModuleNotFoundError: AppKit")
+        with self.assertRaises(RuntimeError) as caught:
+            gui_permissions._request_screen_capture(run=run)
+        self.assertIn("AppKit", str(caught.exception))
+
+    def test_registering_screen_recording_uses_the_connected_request(
+            self) -> None:
+        with mock.patch.object(gui_permissions,
+                               "_request_screen_capture") as request:
+            gui_permissions.register_with_macos("screen_recording")
+        request.assert_called_once_with()
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS bindings")
+    def test_the_request_code_only_uses_what_conduct_installs(self) -> None:
+        import importlib.util
+        for module in ("AppKit", "Quartz"):
+            self.assertIsNotNone(importlib.util.find_spec(module), module)
+        source = (ROOT / "conduct.py").read_text()
+        self.assertIn("pyobjc-framework-Cocoa", source)
+
+    def test_a_computer_task_lists_the_app_in_each_missing_pane(self) -> None:
+        self.driver = FakeDriver(screen_recording=False)
+        asked = gui_permissions.register_missing_computer_grants(
+            driver_factory=lambda: self.driver,
+            register=self.registered.append, platform="darwin")
+        self.assertEqual(asked, ["screen_recording"])
+        self.assertEqual(self.registered, ["screen_recording"])
+
+    def test_nothing_missing_asks_for_nothing(self) -> None:
+        asked = gui_permissions.register_missing_computer_grants(
+            driver_factory=lambda: self.driver,
+            register=self.registered.append, platform="darwin")
+        self.assertEqual((asked, self.registered), ([], []))
+
+    def test_other_platforms_are_left_alone(self) -> None:
+        self.driver = FakeDriver(screen_recording=False)
+        asked = gui_permissions.register_missing_computer_grants(
+            driver_factory=lambda: self.driver,
+            register=self.registered.append, platform="linux")
+        self.assertEqual((asked, self.registered), ([], []))
+
+    def test_the_remedy_names_the_plus_button(self) -> None:
+        from conductor.computer import Driver
+        self.assertIn("click + and choose it from Applications",
+                      Driver.remedy)
 
 
 class NamingTheApp(unittest.TestCase):

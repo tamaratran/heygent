@@ -344,7 +344,9 @@ class Driver:
     # running conductor, so that grant needs a restart to count.
     remedy = ("grant Accessibility and Screen Recording in System "
               "Settings > Privacy & Security to the terminal app that "
-              "runs the workers and the conductor; a fresh Accessibility "
+              "runs the workers and the conductor (heygent, when it was "
+              "opened as the app; if it is not in a list, click + and "
+              "choose it from Applications); a fresh Accessibility "
               "grant counts only after conduct.sh is restarted")
 
     def __init__(self, quartz=None, run=subprocess.run, ax=_ax_trusted,
